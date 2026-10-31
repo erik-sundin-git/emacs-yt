@@ -28,6 +28,10 @@ KEYRINGS = ("GNOMEKEYRING", "BASICTEXT")
 LOGIN_COOKIES = {"LOGIN_INFO"}
 SAPISID_COOKIES = {"SAPISID", "__Secure-3PAPISID"}
 FAILED_RE = re.compile(r"\((\d+) could not be decrypted\)")
+# Chromium stores expiry as microseconds since 1601-01-01, and yt-dlp
+# passes that through unchanged; anything this large is not Unix seconds.
+CHROMIUM_TIME_MIN = 10 ** 11
+CHROMIUM_EPOCH_OFFSET = 11644473600
 
 
 class CapturingLogger:
@@ -77,6 +81,10 @@ def extract(browser, profile, keyring, base):
         if level in ("warning", "error"):
             summary["warnings"].append(message)
     kept = [c for c in jar if wanted(c.domain, base)]
+    for cookie in kept:
+        if cookie.expires and cookie.expires > CHROMIUM_TIME_MIN:
+            cookie.expires = (cookie.expires // 1_000_000
+                              - CHROMIUM_EPOCH_OFFSET)
     names = {c.name for c in kept}
     summary.update(count=len(kept), total=len(jar),
                    has_login_info=bool(names & LOGIN_COOKIES),

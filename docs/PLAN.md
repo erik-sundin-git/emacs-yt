@@ -86,7 +86,8 @@ every module ─> yt (customs + keymaps only); yt.el requires nothing
 ```
 - **Conversion:** `yt-video-from-json PLIST`. All JSON is parsed with `:object-type 'plist :array-type 'list :null-object nil :false-object nil`. Use `plist-member` to tell a missing key from a nil value.
 - **Shorts:** detected **by URL only** (`/shorts/`). Flat Shorts entries come from `shortsLockupViewModel` and contain only id, url, title, view_count, and thumbnails. Every channel accessor must therefore handle nil.
-- **Sorting** uses `(or timestamp inherited-ts fetched-at)`:
+- **`view_count` is usually missing.** It was absent in all 30 real feed entries during the M0 spike, so the Views display is optional.
+- **Sorting (changed by the M0 spike):** the subscriptions feed is sorted by **feed position**, which is stored per fetch. The approximate timestamps are rounded from "N hours ago" and are not monotonic in feed order, so they are used for display only. Channel uploads and merged caches still need a time key, and for that the order `(or timestamp inherited-ts fetched-at)` applies:
   - An entry without a timestamp, which includes all Shorts, borrows the timestamp of the entry just before it in feed order. This keeps a first fetch from putting every Short at the top.
   - A cached exact timestamp is never overwritten by an approximate one.
 - **Clock:** `yt--now` is a `defvar` holding a function, defaulting to `float-time`. All relative-time code calls it, so tests can control the clock.
@@ -160,7 +161,7 @@ This design means **no file holding all browser cookies ever exists**. Running `
 - **Every run** gets a private copy in `yt-runtime-directory`, which is `$XDG_RUNTIME_DIR/yt/` (tmpfs, 0700). Emacs checks that this directory is owned by the user and has mode 0700, and refuses to use it otherwise. There is no fallback to /tmp.
 - The copy is created with `(with-file-modes #o600 …)` followed by an explicit `set-file-modes #o600`. Directories use `#o700`. Tests assert `(file-modes f)`.
 - **Write-back:** after an exit-0 run, if the copy has the header and contains `LOGIN_INFO` and SAPISID, and `yt-auth--generation` hasn't changed since the run started, the copy is renamed atomically into the master. Only one writer at a time is allowed, using a single in-Emacs mutex. This keeps cookies that YouTube rotated during the run (`__Secure-*PSIDTS`). The copy is deleted in `unwind-protect` and on load (stale copies).
-- **mpv** gets its own snapshot, `yt-runtime-directory/mpv-cookies.txt`. It is refreshed from the master before each `loadfile`, and nothing is written back from it.
+- **mpv** never gets cookies. Emacs resolves the streams itself (§7.1a), and only yt-dlp sees cookies.
 
 **Re-export after failure:**
 - On an `expired` failure, the generation is checked first. If another request has already re-exported, the request simply retries. Otherwise a single-flight `(auth . export)` call runs, and waiting requests join it instead of being dropped. Each request is retried at most once.
@@ -185,7 +186,7 @@ This design means **no file holding all browser cookies ever exists**. Running `
 | Subscribed channels | `--flat-playlist -J -- https://www.youtube.com/feed/channels` |
 | Channel uploads | `--flat-playlist --lazy-playlist -I 1:N -j -- https://www.youtube.com/channel/UC…/videos` |
 | Search | `--flat-playlist -j -- "ytsearch20:QUERY"` |
-| Stream URLs (VLC) | `--no-playlist -f FORMAT --print urls -- URL` (`-g` is a hidden legacy alias) |
+| Stream resolve (mpv and VLC, §7.1a) | `--no-playlist -f FORMAT -j -- URL`. Use `requested_formats[].url`, `http_headers` and `available_at`. Not `--print urls` / `-g`: they lack `available_at`. |
 
 - `:ytsubs` fails clearly when logged out. It only checks that the cookies are present, though, not whether the server still accepts them. A feed run that exits 0 with zero entries or with a "no longer valid" warning is therefore classified as `expired`.
 - The second pass (exact date, description, chapters, tags) runs only from the info buffer, through a queue that allows 2 at once.
@@ -375,6 +376,19 @@ Feed-only keys:
 - Skipped when the saved position is under 30 s or past the threshold.
 - Otherwise the message is "Resuming at 12:34 — C-u RET plays from start".
 
+### 7.1a Stream resolver (shared by mpv and VLC; changed by the M0 spike)
+mpv's ytdl_hook **cannot play YouTube**. yt-dlp now gives each format an `available_at` time 3–5 s in the future, a fetch before that time gets HTTP 403, and ytdl_hook fetches immediately (docs/spike.md). Emacs therefore resolves every video itself:
+- **`yt-ytdlp-resolve VIDEO FORMAT CALLBACK`** (in `yt-ytdlp.el`) runs `<base> --no-playlist -f FORMAT -j -- URL` through `yt-process-run`, with the usual per-run cookie copy and write-back (§4.2). It calls CALLBACK with the plist `(:video URL :audio URL-or-nil :headers ALIST :available-at EPOCH :title STR :duration N)`:
+  - `requested_formats` gives the video and the audio entry; a single combined format gives only `:video`.
+  - `:headers` comes from that format's `http_headers`.
+  - `:available-at` is the maximum `available_at` over the formats, or nil.
+- **Waiting:** `yt-player--when-available PLIST FN` calls FN from a `run-at-time` timer once `(yt--now)` has passed `:available-at` plus 1 s, so Emacs never blocks.
+- **Benefits:**
+  - The §4.5 classifier sees the full yt-dlp stderr for every playback. ytdl_hook used to hide it behind `--no-warnings`.
+  - Playback uses the same per-run cookie copy and write-back as everything else.
+  - mpv never needs cookies.
+- **Expiry:** URLs expire after about 6 h. A queued mpv entry whose `end-file` reason is `error` is re-resolved and reloaded **once**.
+
 ### 7.2 mpv backend
 One long-lived idle mpv per Emacs session. It is started lazily. `yt-mpv--instance` is incremented on every spawn, and every timer, filter, and sentinel checks it and does nothing if it has changed.
 
@@ -384,18 +398,13 @@ One long-lived idle mpv per Emacs session. It is started lazily. `yt-mpv--instan
 3. Remove a stale socket at the path without following symlinks.
 4. Run:
 ```
-mpv --idle=yes --force-window=yes --no-terminal
+mpv --idle=yes --force-window=yes --no-terminal --ytdl=no
     --input-ipc-server=<yt-runtime-directory>/mpv-<emacs-pid>-<instance>.sock
-    --ytdl-format=<yt-player-format>
-    --script-opts-append=ytdl_hook-ytdl_path=<(executable-find yt-ytdlp-program)>
-    --ytdl-raw-options-append=ignore-config=
-    --ytdl-raw-options-append=cookies=<yt-runtime-directory>/mpv-cookies.txt
     --wayland-app-id=emacs-yt
     --title=${media-title} — emacs-yt          ; argv element, no shell quotes
     <yt-mpv-extra-args, default ("--hwdec=auto-safe")>
 ```
-- Each `-append` adds exactly one key=value pair, so commas need no escaping.
-- ytdl_hook runs yt-dlp once per file at load time, with its own `--no-warnings`. Auth warnings therefore never reach Emacs, only `ERROR:` lines do.
+- `--ytdl=no` turns off ytdl_hook. Every URL that mpv gets is a resolved stream URL from §7.1a.
 - An empty window stays open after the playlist ends. This is documented, and `--keep-open=yes` is offered as an alternative.
 
 **Connect:** `yt-mpv--connect SOCKET` is separate from spawning, so tests can call it directly.
@@ -414,12 +423,12 @@ mpv --idle=yes --force-window=yes --no-terminal
 
 **On connect:**
 - `["observe_property",<obs-id>,P]` for each of pause, time-pos, duration, media-title, playlist-pos, speed, idle-active. Events arrive as `{"event":"property-change","id":…,"name":P,"data":…}` and are dispatched **by `name`**. A missing `data` means nil, for example `duration` while idle.
-- `["request_log_messages","warn"]`. Only events with `prefix == "ytdl_hook"` are kept, in a ring of 20. The level is never set to verbose or debug, because those levels log argv and HTTP headers.
+- `["request_log_messages","warn"]`. Messages are kept in a ring of 20 for `yt-player-show-log` (for example ffmpeg's `HTTP error 403`). The level is never set to verbose or debug, because those levels log HTTP headers.
 
 **Commands:**
 | Action | JSON `command` |
 |---|---|
-| play now | `{"name":"loadfile","url":U,"flags":"replace","options":{"force-media-title":"T","start":"123.4"}}` (option values **must be strings**) |
+| play now | `{"name":"loadfile","url":V,"flags":"replace","options":{"audio-file":A,"force-media-title":"T","user-agent":UA,"start":"123.4"}}`. Option values **must be strings** (verified: a number gives `invalid parameter`). `audio-file` is omitted for a combined format, and the other `:headers` go in `http-header-fields`. Sent from the §7.1a timer, after `available_at`. |
 | enqueue | same with `"flags":"append-play"` |
 | pause | `["cycle","pause"]` |
 | seek | `["seek",±N,"relative"]` / `["seek",S,"absolute"]` |
@@ -427,10 +436,9 @@ mpv --idle=yes --force-window=yes --no-terminal
 | next / prev | `["playlist-next","weak"]` / `["playlist-prev","weak"]` |
 | playlist | `["get_property","playlist"]` (entries have `id`), `["playlist-play-index",i]`, `["playlist-remove",i]` |
 | stop | `["stop","keep-playlist"]` |
-| quit | `["quit"]` |
+| quit | `{"command":["quit"]}`. A bare `["quit"]` line is ignored by mpv (verified). |
 
-- **M0 spike check:** confirm that the named `loadfile` form with an `options` map works on mpv 0.41. If it doesn't, fall back to the positional form `["loadfile",U,"replace",-1,"start=S"]` and set the title with `set_property force-media-title`.
-- Before every `loadfile`, refresh `mpv-cookies.txt` from the master.
+- **M0 spike result:** the named `loadfile` form with an `options` map works on mpv 0.41. It returns `{"data":{"playlist_entry_id":N}}`, and it played a real video to `end-file reason=eof` on sway (docs/spike.md).
 
 **Tracking (by `playlist_entry_id`):**
 - The `loadfile` reply carries `data.playlist_entry_id`, and the callback stores `entry-id → yt-video`.
@@ -468,8 +476,8 @@ mpv --idle=yes --force-window=yes --no-terminal
 **Dotfiles change (done 2026-10-31):** `services.emacs.startWithUserSession = "graphical";` is now set in `homeManager.waylandBase` (`~/dotfiles/nix/modules/programs/wayland-base.nix`), so it applies only to the sway and Hyprland hosts, and the daemon there inherits `WAYLAND_DISPLAY`. The i3, xfce and headless hosts keep `default.target`. Passing the frame's `WAYLAND_DISPLAY` through (above) stays as a fallback.
 
 ### 7.3 VLC backend
-1. Resolve asynchronously with `<base> --no-playlist -f FORMAT --print urls -- URL`. This prints one line for a combined format, or two lines (video, then audio).
-2. Launch with `vlc --no-video-title-show --play-and-exit --meta-title=TITLE V [--input-slave=A]`. Both flags were checked against the installed vlc. The WAYLAND_DISPLAY handling is the same as for mpv.
+1. Resolve with `yt-ytdlp-resolve` (§7.1a). Not `--print urls`: it doesn't give `available_at`, and VLC would get 403.
+2. Once `available_at` has passed, launch `vlc --no-video-title-show --play-and-exit --meta-title=TITLE --http-user-agent=UA V [--input-slave=A]`. All the flags were checked against the installed vlc. The WAYLAND_DISPLAY handling is the same as for mpv.
 
 Notes:
 - **Signed URLs:** the URLs are signed, tied to the IP address, and expire after about 6 h, so they are resolved right before launch and never cached.
@@ -480,7 +488,7 @@ Notes:
   - The rc interface is out of scope.
 
 ### 7.4 Playback errors
-mpv `end-file` with reason `error`, and VLC resolve stderr, both go through the §4.5 classifier, using the ytdl_hook ring for mpv.
+The resolver's yt-dlp stderr goes through the §4.5 classifier for both backends. When mpv's `end-file` reason is `error`, the file is re-resolved once (§7.1a), and the mpv log ring is offered through `yt-player-show-log`.
 - **Format error:** retry once with `b`.
 - **Age, members-only, or bot check:** show the specific explanation.
 - **Anything else:** show the last error line, and `M-x yt-player-show-log` opens the ring or stderr.
@@ -637,7 +645,7 @@ After each milestone: report what changed, what was tested, and what is still op
 | **M0** | `git init`, skeleton with license headers in every file (GPL-3.0-or-later, SPDX), Makefile with the isolation guard, flake (`emacs-test`, devShell, `apps.test`, `apps.sandbox`, `checks`, `yt-export-cookies`, `runtime`), stub `yt`, README skeleton, CHANGELOG. **Manual spike in the sandbox:** create the dedicated Chromium profile, run the exporter, run `:ytsubs` by hand, confirm the named `loadfile` + options form against mpv 0.41, confirm `--print urls` + vlc. | `nix flake check` passes. `nix run .#sandbox` opens a separate Emacs. `make` refuses to run with the host Emacs. Spike findings are recorded in `docs/spike.md`. | Isolation-guard test, fixture leak guard |
 | **M1** | yt-process, yt-video, yt-ytdlp, yt-auth, a basic yt-doctor: `yt-login` (profile selection, exporter, verification), per-run cookies with write-back, the classifier, `yt-debug-fetch-feed` | In the sandbox: `yt-login` then `yt-debug-fetch-feed` lists real items. With the profile logged out, the expired message appears. | Process, NDJSON, and stop tests; the classifier table; auth (filter, modes, generation, join); argv assertions |
 | **M2** | yt-cache and yt-feed: `M-x yt` is the home view (cache first, then refresh), with header line, `g`/`G`, filters, `w`/`u`, `b`/`y`/`Y`, and automatic login on first run | After a sandbox restart the cached feed shows immediately. Point stays on the same video id after refresh. `(yt)` returns in under 200 ms under hang mode. | Render, sort, point, filters, cache round-trip and reopen, watched-hook redraw |
-| **M3** | yt-player and yt-vlc: `RET`/`v` plays through VLC, marked watched at start, with format fallback. **All three requirements are now covered** (playback via VLC). | `v` on a sandbox feed row plays with separate audio and video streams. | argv, `--print urls` parsing, format-retry scenario |
+| **M3** | yt-player and yt-vlc: `RET`/`v` plays through VLC, marked watched at start, with format fallback. **All three requirements are now covered** (playback via VLC). | `v` on a sandbox feed row plays with separate audio and video streams. | argv, resolver `-j` parsing (combined vs separate formats, `available_at`, headers), wait-timer, format-retry scenario |
 | **M4** | yt-mpv: spawn with WAYLAND_DISPLAY, IPC, play/enqueue/pause/seek/speed/next/stop/quit, `yt-player-mode`, watched near the end, resume, cleanup on exit, the `auto` backend default, transient repeat, `homeModules.default` (mpv for the host) | In the sandbox, `RET` plays in mpv. `C-c y SPC` pauses. Closing mpv leaves no socket behind and marks the video watched past 90%. | The full fake-socket suite (above) |
 | **M5** | Channels view, channel uploads (`o`, `l`), info buffer (`i`, second-pass queue), search (`C-c y s`), playlist buffer | `l` → `RET` shows uploads. `i` shows the description and chapters, and a chapter plays from its timestamp. | Parsers, rendering, the queue limit |
 | **M6** | yt-select, marginalia, embark, `overlays.default`, `packages.default` (trivialBuild), `installElisp` | `embark-act` on a candidate plays it, in the sandbox with embark loaded. `nix build` succeeds. | Candidate and annotation tests |
@@ -692,7 +700,8 @@ Judges: (1) yt-dlp facts, (2) Elisp APIs, (3) async/concurrency, (4) UX/keys, (5
 | Shared `yt-video-actions-map`; `w` = mark watched, `u` = unwatch; catch-up through M-x only | 4 | §6 |
 | Status in the header line; refresh-interval reuse; auto-login on first run; resume limits and message | 4 | §6, §7.1 |
 | Shorts detected by URL only, nil-safe channel, inherited timestamp | 1 | §2 |
-| `--print urls` instead of the hidden `-g`; no ffmpeg needed; drop plain `chromium` probe; check DBUS in doctor | 1 | §4.3, §12 |
+| `--print urls` instead of the hidden `-g`; no ffmpeg needed; drop plain `chromium` probe; check DBUS in doctor. *Later superseded by the M0 spike:* stream resolution uses `-j` for `available_at`. | 1 | §4.3, §12 |
+| **M0 spike:** mpv's ytdl_hook gets 403 because it ignores `available_at`, so Emacs resolves streams itself (`--ytdl=no`, shared resolver, no mpv cookies); feed sorted by position; `view_count` optional; exporter converts Chromium expiry times | spike | §2, §4.2, §4.3, §7 |
 | Flake: `homeModules`, `git+file` input with `follows`, per-host import, no `nixpkgs.overlays` in the module, runtime = mpv (yt-dlp/vlc already installed), trivialBuild `version` | 8 | §9 |
 | `xdg-state-home`/`xdg-cache-home`, a single state directory, configurable update hint | 8, 10 | §4.2, §8 |
 | Extra-args denylist extended; no `url-retrieve` fallback; search queries redacted; socket directory ownership check | 6 | §4.1, §6, §13 |

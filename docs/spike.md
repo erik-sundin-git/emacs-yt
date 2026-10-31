@@ -26,8 +26,34 @@ These are checks of the plan's assumptions against the real tools, run on 2026-1
 ## yt-dlp
 - `--print urls` with `-f 'bv*[height<=360]+ba/b'` on a public video (no cookies) prints **two lines**, the video stream and then the audio stream, both on `*.googlevideo.com`, and exits 0. This confirms the VLC plan in §7.3 (`V` plus `--input-slave=A`).
 
-## Still pending: these need the dedicated Chromium profile
-1. Create the profile `emacs-yt` in Chromium and sign in to YouTube in it. At the time of the spike only `Default` ("Work") existed.
-2. `yt-export-cookies --profile "<dir>" --output …`: which keyring wins (gnomekeyring or basictext), the cookie count, and zero decrypt failures.
-3. `yt-dlp --cookies <copy> --flat-playlist -I 1:3 -J -- :ytsubs` returns entries. Record which fields are present in them.
-4. One mpv play of a real video in the sandbox, with `--ytdl-raw-options-append=cookies=…` and `ytdl_path`, on sway.
+## Cookie export (dedicated profile `emacs-yt` = `Profile 1`)
+- `yt-export-cookies --profile "Profile 1" --output .sandbox/state/yt/cookies.txt` returned `{"keyring":"GNOMEKEYRING","count":24,"total":55,"decrypt_failures":0,"has_login_info":true,"has_sapisid":true}`. The file is mode 0600, and every kept cookie is on `.youtube.com`. gnomekeyring succeeded on the first try.
+- **Expiry bug fixed:** yt-dlp passes Chromium's `expires_utc` (microseconds since 1601) through unchanged (`cookies.py:384-392`), so every cookie looked like it would expire in the year 4×10⁸. The exporter now converts these values to Unix seconds. After the fix, the latest expiry is 2027-12-05.
+
+## Subscription feed (`:ytsubs`, per-run cookie copy, `-I 1:30`, `youtubetab:approximate_date`)
+- Exit 0, 30 entries, empty stderr, about 6 s including `nix develop` start-up.
+- **Fields present** (non-null, out of 30): id, url (all `/watch?v=`), title, channel, uploader, thumbnails 30. channel_id, channel_url, uploader_id, duration, timestamp, upload_date 29. live_status 3 (1 `is_upcoming`, 2 `was_live`).
+- **`view_count` was absent in all 30 entries.** PLAN §2 / §4.3 assumed it was "sometimes" present. The Views column and views-based logic must treat it as optional and usually missing.
+- **The approximate timestamps are not monotonic in feed order** (e.g. `…404800` comes before `…444400`), because they are rounded from "N hours/days ago". The feed's **position** must be the primary sort key, with the timestamp used for display only. This changes PLAN §2 and §6.
+- **yt-dlp rewrote the cookie copy** (3796 → 3739 bytes, mode stays 0600). `SIDCC`, `__Secure-1PSIDCC` and `__Secure-3PSIDCC` got new expiries and values, and `PREF` was rewritten. This confirms that write-back from the per-run copy (PLAN §4.2) is required.
+
+## Playback: mpv's ytdl_hook cannot play YouTube (root cause found)
+- **Symptom:** plain mpv (`--no-config`, no yt options at all) fails on every try with `ffmpeg/warn: https: HTTP error 403 Forbidden`, then `end-file reason=error file_error="no audio or video data played"`. The yt options and cookies are not involved.
+- **Cause:** yt-dlp now gives each format an `available_at` timestamp 3–5 s in the future (`extractor/youtube/_video.py:3593`).
+  - A request before that time gets **403**; the same URL after it gets **206**. This was confirmed 3/3: `immediate=403 after-available_at=206`.
+  - yt-dlp's own downloader waits for it (`[download] Sleeping 5.00 seconds as required by the site...`, `downloader/common.py:468`).
+  - mpv's ytdl_hook does not wait, and fetches the URL immediately.
+  - Some earlier tests seemed to show that the yt-dlp flags mattered. They did not: the URL fetched last in each round was simply the one fetched before its `available_at`.
+- **What works:** Emacs-style resolution, verified on sway:
+  1. `yt-dlp --cookies <per-run copy> -f 'bv*[height<=720]+ba/b' -j --no-playlist -- URL` (no warnings).
+  2. Wait until `max(requested_formats[].available_at)`.
+  3. Send `loadfile` to mpv started with `--ytdl=no`, using options `audio-file`, `force-media-title`, `user-agent` (from `http_headers`) and `end`.
+
+  Result: `start-file → file-loaded → playback-restart → end-file reason=eof`, mpv exit 0.
+- **The same delay applies to VLC:** `--print urls` gives the URLs but not `available_at`, so VLC would also get 403. VLC must resolve with `-j` and wait in the same way.
+
+## Plan changes adopted from this spike (applied to PLAN.md §7)
+1. **mpv no longer uses ytdl_hook.** mpv runs with `--ytdl=no`, Emacs resolves every video with yt-dlp, and the cookie snapshot for mpv, the `--ytdl-raw-options`, the `ytdl_path` script-opt and the ytdl_hook log ring are all dropped. Emacs now sees yt-dlp's stderr for every playback, so the §4.5 classifier also covers playback errors.
+2. **One shared resolver** (`yt-ytdlp-resolve`) for mpv and VLC. It returns the video and audio URLs, the HTTP headers, `available_at` and the title, and the backends start playback from a timer once `available_at` has passed, without blocking Emacs.
+3. **Stream URLs expire after about 6 h,** so for long queues an entry whose `end-file` reason is `error` gets re-resolved once.
+4. **The feed is sorted by feed position;** timestamps are for display only. `view_count` is optional.
