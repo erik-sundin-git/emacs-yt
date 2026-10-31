@@ -58,9 +58,9 @@
 - yeetube, ytdious, and elfeed-tube only do search or RSS, not authenticated feeds.
 - The Commentary credits empv and mpv.el as prior art. If any code is adapted from them, their GPL copyright notices are kept.
 
-**Dependency graph** (strictly downward):
+**Dependency graph** (strictly downward). Changed in M1: `yt-auth` depends on `yt-ytdlp`, not the other way round. Verifying a login has to run yt-dlp, so `yt-auth-run` (which runs yt-dlp with a per-run cookie copy) lives in `yt-auth`, and `yt-ytdlp` keeps only argument lists, the classifier and the version check:
 ```
-yt-feed ─> yt-ytdlp ─> yt-auth ─> yt-process
+yt-feed ─> yt-auth ─> yt-ytdlp ─> yt-process
    │   └─> yt-cache ─> yt-video
    └─> yt-player ─(lazy require by backend symbol)─> yt-mpv | yt-vlc
 yt-mpv/yt-vlc ─> yt-player, yt-ytdlp, yt-cache
@@ -137,7 +137,7 @@ Each builder appends its own flags, then **`--`**, then the URL.
 **Profile selection:**
 - `yt-login` reads `~/.config/chromium/Local State` (`profile.info_cache`, which maps directory to display name). It offers a completing-read over the profiles, preselecting one named `emacs-yt`.
 - If the user picks `Default`, `yt-login` shows a warning and asks for confirmation.
-- The choice is saved in the cache `meta` table. It is **never** saved through `customize-save-variable`.
+- The choice is saved in `state.eld` in `yt-state-directory` (mode 0600, replaced atomically; `yt-state-get` / `yt-state-put` in `yt.el`). It was planned for the cache `meta` table, but the cache only arrives in M2 and this small state doesn't need SQLite. It is **never** saved through `customize-save-variable`.
 - `yt-cookie-profile` is a user override with type `(choice (const :tag "Ask" nil) string)`.
 - Nothing is probed silently.
 
@@ -206,7 +206,7 @@ This design means **no file holding all browser cookies ever exists**. Running `
 | 4 | `rate-limited\|HTTP Error 429\|try again later` | rate-limit | Back off 60 min. |
 | 5 | `login details are needed\|no longer valid` (also: the feed exits 0 with zero entries; also `redirected to youtube.com home page`, **feed source only**) | expired | Re-export flow (§4.2). |
 | 6 | `could not find chromium cookies database` | bad-profile | Re-run `yt-login`. |
-| 7 | `does not look like a Netscape format` | corrupt-cookies | Re-export. |
+| 7 | `failed to load cookies\|does not look like a Netscape format\|must be Netscape formatted`. yt-dlp wraps the parser's error in `CookieLoadError('failed to load cookies')` (`cookies.py:113`). | corrupt-cookies | Re-export. |
 | 8 | `urlopen error\|name resolution\|timed out` | network | "Offline — showing cached feed". |
 | 9 | `unable to extract\|unable to recognize tab page\|signature solving failed\|n challenge` | extractor | Version hint. |
 | 10 | `requested format is not available` | format | Retry once with `b`. |

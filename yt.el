@@ -50,6 +50,81 @@
   :prefix "yt-"
   :link '(url-link :tag "Homepage" "https://github.com/erik-sundin-git/emacs-yt"))
 
+(defgroup yt-backend nil
+  "How yt runs yt-dlp and signs in to YouTube."
+  :group 'yt
+  :prefix "yt-")
+
+(defgroup yt-feed nil
+  "The yt subscription feed."
+  :group 'yt
+  :prefix "yt-feed-")
+
+(defcustom yt-ytdlp-program "yt-dlp"
+  "Name or file name of the yt-dlp program."
+  :type 'string
+  :group 'yt-backend
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-ytdlp-extra-args nil
+  "Extra arguments passed to every yt-dlp invocation.
+Arguments that would print secrets, change the output format or
+replace yt's cookie handling, such as \"--verbose\",
+\"--print-traffic\", \"--print\" or \"--cookies\", are refused."
+  :type '(repeat string)
+  :group 'yt-backend
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-ytdlp-min-version "2026.06.01"
+  "Oldest yt-dlp version that yt accepts without a warning.
+The value has the form YYYY.MM.DD, like the output of
+\"yt-dlp --version\"."
+  :type 'string
+  :group 'yt-backend
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-ytdlp-update-hint "update yt-dlp (it comes from %s)"
+  "How to tell the user to update yt-dlp.
+The string is passed to `format' with the absolute file name of
+the yt-dlp program."
+  :type 'string
+  :group 'yt-backend
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-export-cookies-program "yt-export-cookies"
+  "Name or file name of the cookie exporter shipped in yt's Nix flake."
+  :type 'string
+  :group 'yt-backend
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-chromium-directory (expand-file-name "chromium" (xdg-config-home))
+  "Chromium's user data directory, which holds \"Local State\"."
+  :type 'directory
+  :group 'yt-backend
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-cookie-profile nil
+  "Chromium profile directory that yt reads YouTube cookies from.
+nil means the profile chosen with \\[yt-login], which yt remembers
+in its state directory.  Use a profile that is signed in only to
+YouTube: the cookies are Google session tokens."
+  :type '(choice (const :tag "Chosen with yt-login" nil)
+                 (string :tag "Profile directory, e.g. \"Profile 1\""))
+  :group 'yt-backend
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-process-timeout 120
+  "Seconds after which a yt-dlp run is interrupted."
+  :type 'natnum
+  :group 'yt-backend
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-feed-limit 100
+  "Number of videos to fetch from the subscription feed."
+  :type 'natnum
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
 (defcustom yt-state-directory (expand-file-name "yt" (xdg-state-home))
   "Directory for persistent yt state, such as cookies and the cache.
 It is created with mode 0700, and yt refuses to use it if it is
@@ -102,6 +177,53 @@ $XDG_RUNTIME_DIR when that option is nil."
             "XDG_RUNTIME_DIR is not set, and yt will not fall back to /tmp"))
          (expand-file-name "yt" xdg)))))
 
+;;;; Clock
+
+(defvar yt--now-function #'float-time
+  "Function returning the current time in seconds since the epoch.
+Tests bind it to control the clock.")
+
+(defun yt--now ()
+  "Return the current time in seconds since the epoch."
+  (funcall yt--now-function))
+
+;;;; Persistent state
+
+(defun yt--state-file ()
+  "Return the name of the file holding yt's small persistent state."
+  (expand-file-name "state.eld" yt-state-directory))
+
+(defun yt--state-read ()
+  "Return the alist stored in the state file, or nil."
+  (let ((file (yt--state-file)))
+    (when (file-readable-p file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (let ((data (ignore-errors (read (current-buffer)))))
+          (and (listp data) data))))))
+
+(defun yt-state-get (key)
+  "Return the value stored for KEY in yt's state file, or nil."
+  (alist-get key (yt--state-read)))
+
+(defun yt-state-put (key value)
+  "Store VALUE for KEY in yt's state file and return VALUE.
+The file is replaced atomically and has mode 0600."
+  (let* ((dir (yt-ensure-state-directory))
+         (data (cons (cons key value) (assq-delete-all key (yt--state-read))))
+         (tmp (with-file-modes #o600
+                (make-temp-file (expand-file-name ".state-" dir)))))
+    (let ((coding-system-for-write 'utf-8-unix)
+          (print-length nil)
+          (print-level nil))
+      (with-temp-file tmp
+        (insert ";; yt state, written by yt.  -*- mode: lisp-data -*-\n")
+        (prin1 data (current-buffer))
+        (insert "\n")))
+    (set-file-modes tmp #o600)
+    (rename-file tmp (yt--state-file) t)
+    value))
+
 ;;;###autoload
 (defun yt ()
   "Show the subscription feed of your YouTube account.
@@ -109,11 +231,16 @@ Not implemented yet: the feed arrives in milestone M2."
   (interactive)
   (user-error "The yt subscription feed is not implemented yet"))
 
+(declare-function yt-login "yt-auth" (&optional choose))
+(declare-function yt-doctor "yt-doctor" ())
+
 ;;;###autoload
 (defvar-keymap yt-map
   :doc "Prefix keymap for yt commands.
 Bind it to a key of your choice, for example \\`C-c y'."
-  "y" #'yt)
+  "y" #'yt
+  "L" #'yt-login
+  "d" #'yt-doctor)
 
 (provide 'yt)
 ;;; yt.el ends here

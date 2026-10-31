@@ -21,6 +21,14 @@
 (add-to-list 'load-path (file-name-as-directory (getenv "YT_SANDBOX_REPO")))
 (setq yt-runtime-directory (getenv "YT_SANDBOX_RUNTIME_DIR"))
 
+;; Generate autoloads from the working tree, as a package install would,
+;; so that commands work before their files are loaded.  The file sits
+;; next to the sources (and is ignored by git) because the autoloads
+;; name files relative to it.
+(let ((autoloads (expand-file-name "yt-autoloads.el" (getenv "YT_SANDBOX_REPO"))))
+  (loaddefs-generate (getenv "YT_SANDBOX_REPO") autoloads)
+  (load autoloads nil t))
+
 (require 'yt)
 (keymap-global-set "C-c y" yt-map)
 

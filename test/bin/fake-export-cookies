@@ -1,0 +1,42 @@
+#!/bin/sh
+# Fake yt-export-cookies for the yt tests.
+#
+# FAKE_EXPORT_SCENARIO=DIR describes one step per call.  For the Nth call
+# (NN = 01, 02, ...) it records its arguments, one per line, in
+# DIR/argv-NN, then:
+#   - writes DIR/NN.cookies to the file given with --output, mode 0600,
+#     if both exist;
+#   - prints DIR/NN.err to standard error and DIR/NN.out (the JSON summary)
+#     to standard output;
+#   - exits with the status in DIR/NN.exit, default 0.
+#
+# Copyright (C) 2026 Erik Sundin
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+set -u
+dir=${FAKE_EXPORT_SCENARIO:?FAKE_EXPORT_SCENARIO is not set}
+
+while ! mkdir "$dir/lock" 2>/dev/null; do sleep 0.01; done
+n=$(( $(cat "$dir/count" 2>/dev/null || echo 0) + 1 ))
+echo "$n" > "$dir/count"
+rmdir "$dir/lock"
+nn=$(printf '%02d' "$n")
+
+: > "$dir/argv-$nn"
+output= prev=
+for arg in "$@"; do
+    printf '%s\n' "$arg" >> "$dir/argv-$nn"
+    [ "$prev" = "--output" ] && output=$arg
+    prev=$arg
+done
+
+if [ -n "$output" ] && [ -f "$dir/$nn.cookies" ]; then
+    (umask 077 && cat "$dir/$nn.cookies" > "$output")
+fi
+if [ -f "$dir/$nn.err" ]; then
+    cat "$dir/$nn.err" >&2
+fi
+if [ -f "$dir/$nn.out" ]; then
+    cat "$dir/$nn.out"
+fi
+exit "$(cat "$dir/$nn.exit" 2>/dev/null || echo 0)"

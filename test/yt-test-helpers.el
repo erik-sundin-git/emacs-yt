@@ -12,8 +12,11 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'ert)
 (require 'yt)
+(require 'yt-process)
+(require 'yt-auth)
 
 (defconst yt-test-dir
   (file-name-directory (or load-file-name buffer-file-name))
@@ -85,6 +88,173 @@ cookies, but its value must start with \"FAKE\"."
                   (when (string-match-p re line)
                     (push (list file n reason) leaks)))))))))
     (nreverse leaks)))
+
+;;;; Waiting for asynchronous results
+
+(defvar yt-test-timeout
+  (string-to-number (or (getenv "YT_TEST_TIMEOUT") "30"))
+  "Seconds `yt-test-wait-until' waits before failing.")
+
+(defun yt-test-wait-until (predicate &optional what)
+  "Process events until PREDICATE returns non-nil, and return its value.
+Fail the test after `yt-test-timeout' seconds, naming WHAT."
+  (let ((deadline (+ (float-time) yt-test-timeout))
+        value)
+    (while (and (not (setq value (funcall predicate)))
+                (< (float-time) deadline))
+      (accept-process-output nil 0.05))
+    (or value
+        (ert-fail (list "Timed out waiting for" (or what predicate))))))
+
+(defun yt-test-sleep (seconds)
+  "Process events for SECONDS."
+  (let ((deadline (+ (float-time) seconds)))
+    (while (< (float-time) deadline)
+      (accept-process-output nil 0.02))))
+
+(defun yt-test-process (program args &rest keys)
+  "Run `yt-process-run' with PROGRAM, ARGS and KEYS, and wait for it.
+Return (ok VALUE INFO) or (error PLIST)."
+  (let (result)
+    (apply #'yt-process-run program args
+           :on-success (lambda (value info) (setq result (list 'ok value info)))
+           :on-error (lambda (err) (setq result (list 'error err)))
+           keys)
+    (yt-test-wait-until (lambda () result) program)))
+
+(defun yt-test-sh (script &rest keys)
+  "Run SCRIPT with sh -c through `yt-process-run' with KEYS; see `yt-test-process'."
+  (apply #'yt-test-process "sh" (list "-c" script) keys))
+
+(defun yt-test-auth-run (args &rest keys)
+  "Run `yt-auth-run' with ARGS and KEYS and wait for it.
+Return (ok VALUE INFO) or (error PLIST)."
+  (let (result)
+    (apply #'yt-auth-run args
+           :on-success (lambda (value info) (setq result (list 'ok value info)))
+           :on-error (lambda (err) (setq result (list 'error err)))
+           keys)
+    (yt-test-wait-until (lambda () result) "yt-auth-run")))
+
+;;;; Fixtures and fake programs
+
+(defconst yt-test-bin-dir (expand-file-name "bin" yt-test-dir)
+  "Directory holding the fake programs.")
+
+(defun yt-test-fixture (name)
+  "Return the file name of the fixture NAME."
+  (expand-file-name name yt-test-fixtures-dir))
+
+(defun yt-test-fixture-string (name)
+  "Return the contents of the fixture NAME."
+  (with-temp-buffer
+    (insert-file-contents (yt-test-fixture name))
+    (buffer-string)))
+
+(defun yt-test-write (file string)
+  "Write STRING to FILE."
+  (let ((coding-system-for-write 'utf-8-unix))
+    (write-region string nil file nil 'silent)))
+
+(defun yt-test-cookies (&optional sid)
+  "Return the contents of a fake YouTube cookie file whose SID is SID."
+  (concat "# Netscape HTTP Cookie File\n"
+          ".youtube.com\tTRUE\t/\tTRUE\t1830000000\tLOGIN_INFO\tFAKE-login\n"
+          ".youtube.com\tTRUE\t/\tTRUE\t1830000000\tSAPISID\tFAKE-sapisid\n"
+          ".youtube.com\tTRUE\t/\tTRUE\t1830000000\tSID\t"
+          (or sid "FAKE-sid") "\n"))
+
+(defun yt-test-export-summary (&rest overrides)
+  "Return an exporter JSON summary, with OVERRIDES applied to a good one."
+  (let ((summary (list :keyring "GNOMEKEYRING" :count 3 :total 9
+                       :decrypt_failures 0 :has_login_info t :has_sapisid t
+                       :warnings [] :error :null :ok t
+                       :profile "Profile 1" :written :null)))
+    (while overrides
+      (setq summary (plist-put summary (pop overrides) (pop overrides))))
+    (json-serialize summary :false-object :false :null-object :null)))
+
+(cl-defun yt-test-step (dir n &key out err exit mode cookies)
+  "Describe the Nth call of a fake program in scenario directory DIR.
+OUT and ERR are its output, EXIT its exit status, MODE one of
+\"stream\", \"hang\" and \"stream-hang\", and COOKIES the cookie
+file it writes."
+  (let ((nn (format "%02d" n)))
+    (pcase-dolist (`(,ext . ,value) `(("out" . ,out) ("err" . ,err)
+                                      ("exit" . ,(and exit (format "%d" exit)))
+                                      ("mode" . ,mode) ("cookies" . ,cookies)))
+      (when value
+        (yt-test-write (expand-file-name (concat nn "." ext) dir) value)))))
+
+(defun yt-test-calls (dir)
+  "Return how many times the fake program of scenario DIR was called."
+  (let ((file (expand-file-name "count" dir)))
+    (if (file-exists-p file)
+        (string-to-number (with-temp-buffer
+                            (insert-file-contents file)
+                            (buffer-string)))
+      0)))
+
+(defun yt-test-argv (dir n)
+  "Return the arguments of the Nth call of the fake program of scenario DIR."
+  (with-temp-buffer
+    (insert-file-contents (expand-file-name (format "argv-%02d" n) dir))
+    (split-string (buffer-string) "\n" t)))
+
+(defun yt-test-install-cookies (&optional contents)
+  "Install CONTENTS, or fake login cookies, as the master cookie file."
+  (let ((file (yt-auth-cookie-file)))
+    (with-file-modes #o600
+      (yt-test-write file (or contents (yt-test-cookies))))
+    (set-file-modes file #o600)
+    file))
+
+(defun yt-test-file-string (file)
+  "Return the contents of FILE."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (buffer-string)))
+
+(defun yt-test-cookie-copies ()
+  "Return the per-run cookie copies left in the runtime directory."
+  (directory-files (yt-ensure-runtime-directory) t "\\`cookies-.*\\.txt\\'"))
+
+(defmacro yt-test-with-scenario (dirs &rest body)
+  "Run BODY with yt pointed at fake programs and fresh directories.
+DIRS is (YTDLP-DIR EXPORT-DIR): variables bound to the scenario
+directories of the fake yt-dlp and the fake cookie exporter.  The
+yt state, runtime and Chromium directories are fresh, and the
+sign-in state is reset."
+  (declare (indent 1))
+  (let ((root (make-symbol "root")))
+    `(let* ((,root (make-temp-file (expand-file-name "scenario-" yt-test-root) t))
+            (,(car dirs) (expand-file-name "ytdlp" ,root))
+            (,(cadr dirs) (expand-file-name "export" ,root))
+            (yt-state-directory (expand-file-name "state" ,root))
+            (yt-runtime-directory (expand-file-name "runtime" ,root))
+            (yt-chromium-directory (expand-file-name "chromium" ,root))
+            (yt-ytdlp-program (expand-file-name "fake-yt-dlp" yt-test-bin-dir))
+            (yt-export-cookies-program
+             (expand-file-name "fake-export-cookies" yt-test-bin-dir))
+            (yt-cookie-profile nil)
+            (yt-ytdlp-extra-args nil)
+            (yt-auth--state 'unknown)
+            (yt-auth--state-time nil)
+            (yt-auth--generation 0)
+            (yt-auth--export-waiters nil)
+            (yt-auth--backoff nil)
+            (yt-auth--stale-copies-cleaned t)
+            (yt-ytdlp--version-checked t)
+            (process-environment
+             (append (list (concat "FAKE_SCENARIO=" ,(car dirs))
+                           (concat "FAKE_EXPORT_SCENARIO=" ,(cadr dirs)))
+                     process-environment)))
+       (make-directory ,(car dirs) t)
+       (make-directory ,(cadr dirs) t)
+       (make-directory yt-chromium-directory t)
+       (unwind-protect
+           (progn ,@body)
+         (delete-directory ,root t)))))
 
 (provide 'yt-test-helpers)
 ;;; yt-test-helpers.el ends here

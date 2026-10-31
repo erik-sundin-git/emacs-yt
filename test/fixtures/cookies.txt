@@ -1,0 +1,6 @@
+# Netscape HTTP Cookie File
+# Hand-written fixture: every value is fake.
+
+.youtube.com	TRUE	/	TRUE	1830000000	LOGIN_INFO	FAKE-login
+.youtube.com	TRUE	/	TRUE	1830000000	SAPISID	FAKE-sapisid
+.youtube.com	TRUE	/	TRUE	1830000000	SID	FAKE-sid

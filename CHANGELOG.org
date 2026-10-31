@@ -1,6 +1,24 @@
 #+title: yt changelog
 
 * Unreleased
+** M1: sign-in and yt-dlp backend
+- =yt-process.el=: asynchronous runner with separate standard error, JSON,
+  streamed NDJSON with early stop, timeouts, cancellation and one run per
+  key.
+- =yt-video.el=: the =yt-video= record built from yt-dlp JSON, and age and
+  duration formatting.
+- =yt-ytdlp.el=: yt-dlp argument lists ending in =--=, an ordered error
+  classifier, a denylist for =yt-ytdlp-extra-args= and a version check.
+- =yt-auth.el=: =yt-login= (choose a Chromium profile, export its
+  youtube.com cookies, verify), =yt-check-auth=, =yt-logout=; every yt-dlp
+  run gets a private 0600 cookie copy whose rotated cookies are written back
+  atomically; an expired session is re-exported once, with concurrent runs
+  sharing the export; back-off after bot checks and rate limits.
+- =yt-doctor.el=: =yt-doctor= (programs, environment, directories, cookie
+  file modes and counts, sign-in state) and =yt-debug-fetch-feed=.
+- The sandbox generates autoloads from the working tree.
+- 59 tests using scripted fake yt-dlp and exporter programs.
+
 ** M0: project skeleton
 - Nix flake with the test Emacs, dev shell, =nix run .#test=,
   =nix run .#sandbox=, =nix flake check= checks and the =yt-export-cookies=
