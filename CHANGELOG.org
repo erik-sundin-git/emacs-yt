@@ -1,0 +1,12 @@
+#+title: yt changelog
+
+* Unreleased
+** M0: project skeleton
+- Nix flake with the test Emacs, dev shell, =nix run .#test=,
+  =nix run .#sandbox=, =nix flake check= checks and the =yt-export-cookies=
+  exporter.
+- Makefile targets that run only with the flake's Emacs, in an isolated
+  HOME/XDG environment.
+- =yt.el= with private state and runtime directories, =yt-map= and a stub
+  =yt= command.
+- Tests for directory privacy, test isolation and the fixture leak guard.

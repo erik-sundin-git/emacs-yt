@@ -1,0 +1,6 @@
+*.elc
+*-autoloads.el
+.eln-cache/
+.sandbox/
+result
+result-*

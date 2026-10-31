@@ -1,0 +1,33 @@
+#!/bin/sh
+# Run a command with HOME and the XDG directories inside a fresh temporary
+# directory, so builds and tests can never read or write real user state.
+# The directory is removed afterwards.  The command sees its location in
+# $YT_TEST_ROOT.
+#
+# Copyright (C) 2026 Erik Sundin
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+set -eu
+
+root=$(mktemp -d "${TMPDIR:-/tmp}/yt-test.XXXXXX")
+cleanup() {
+    chmod -R u+w "$root" 2>/dev/null || true
+    rm -rf "$root"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+
+for d in home state cache config runtime; do
+    mkdir -m 0700 "$root/$d"
+done
+
+status=0
+env HOME="$root/home" \
+    XDG_STATE_HOME="$root/state" \
+    XDG_CACHE_HOME="$root/cache" \
+    XDG_CONFIG_HOME="$root/config" \
+    XDG_RUNTIME_DIR="$root/runtime" \
+    TZ=UTC \
+    YT_TEST_ROOT="$root" \
+    "$@" || status=$?
+exit "$status"

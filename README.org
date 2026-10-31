@@ -1,0 +1,51 @@
+#+title: yt: YouTube subscriptions in Emacs
+
+yt shows the subscription feed of your YouTube account in an Emacs buffer,
+and plays videos in an mpv window controlled from Emacs or streams them to
+VLC.  It signs in with cookies from a dedicated Chromium profile and fetches
+everything with yt-dlp.  It uses no OAuth and no API key.
+
+*Status:* early development, milestone M0 (project skeleton).  The feed and
+playback are not implemented yet.  See [[file:docs/PLAN.md][docs/PLAN.md]]
+for the design and the milestones.
+
+* Requirements
+- Emacs 30.1 or later
+- yt-dlp, mpv and/or VLC, and ungoogled Chromium (or Chromium)
+- Nix with flakes for development: the flake provides every tool
+
+* Development
+All builds and tests use the Emacs from this flake, not the Emacs installed
+on the host, and run with =HOME= and the XDG directories in a temporary
+directory, so they cannot touch real cookies, caches or customizations.
+
+#+begin_src sh
+nix develop            # shell with the test Emacs, mpv, yt-dlp, vlc, jq, curl
+make all               # compile, checkdoc, lint, test (inside nix develop)
+make test SELECTOR='"yt-test-.*"'   # run a subset of the tests
+nix run .#test         # same as `make test`, without entering the shell
+nix run .#test -- lint # any make target
+nix flake check        # compile, checkdoc, lint and test in the Nix sandbox
+#+end_src
+
+=make= refuses to run unless =YT_EMACS= points at the flake's Emacs.
+
+** Sandbox Emacs
+#+begin_src sh
+nix run .#sandbox
+#+end_src
+
+This opens a GUI Emacs that is separate from the host Emacs and its daemon.
+It has its own init directory (=.sandbox/emacs.d=), yt state (=.sandbox/state=),
+cache (=.sandbox/cache=) and runtime directory (=$XDG_RUNTIME_DIR/yt-sandbox=).
+It loads yt directly from the working tree, binds =C-c y= to =yt-map=, and puts
+the flake's mpv, yt-dlp, vlc and =yt-export-cookies= first on =PATH=.
+
+* Privacy
+yt adds no telemetry.  The cookies it uses are Google-account session
+tokens, so yt reads them only from a Chromium profile dedicated to it, keeps
+only the youtube.com cookies, and stores them in a mode 0600 file.  See
+section 13 of [[file:docs/PLAN.md][docs/PLAN.md]].
+
+* License
+GPL-3.0-or-later.  See [[file:LICENSE][LICENSE]].
