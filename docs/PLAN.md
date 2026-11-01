@@ -224,8 +224,9 @@ This design means **no file holding all browser cookies ever exists**. Running `
 - **On open:**
   - `PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;`
   - The schema is created with `IF NOT EXISTS` inside `BEGIN IMMEDIATE`, and `schema_version` is checked.
-- **Tables:**
-  - `videos(id PK, data TEXT, fetched_at INT, watched INT, position REAL, ts_exact INT)`. `data` holds an **allowlisted** set of struct fields. Raw yt-dlp JSON is never stored, because it would include signed googlevideo URLs that contain `ip=`.
+- **Tables** (changed in M2: no `ts_exact` column; the stored `timestamp-approx-p` is nil, `t` or `inherited` and decides which time wins a merge; feed order has its own table):
+  - `feed(source, id, pos)`. A refresh stores the fetched videos first, then the previously cached ones that were not fetched, in their old order, capped at `yt-cache-feed-max` (500). Upcoming and live streams never inherit a time.
+  - `videos(id PK, data TEXT, fetched_at INT, watched INT, position REAL)`. `data` holds an **allowlisted** set of struct fields. Raw yt-dlp JSON is never stored, because it would include signed googlevideo URLs that contain `ip=`.
   - `channels(id PK, data TEXT)`.
   - `meta(key PK, value)`.
 - **API:**
@@ -233,7 +234,8 @@ This design means **no file holding all browser cookies ever exists**. Running `
   - `yt-cache-videos &optional LIMIT`, `yt-cache-get`, `yt-cache-set-position`.
   - `yt-cache-meta` / `yt-cache-set-meta`.
   - `yt-forget-history` clears watched and position.
-- **Watched state:** `yt-mark-watched VIDEO-OR-ID &optional UNWATCHED` is the **only** way to change it. It writes the row and then runs `yt-watched-changed-functions` with the id.
+- **Watched state:** `yt-mark-watched VIDEOS &optional UNWATCHED` is the **only** way to change it. It writes the rows in one transaction and then runs `yt-watched-changed-functions` once with the list of ids and the new state (changed in M2, so that marking a region redraws once).
+- **File name:** the option `yt-cache-file` (nil means `yt.sqlite` in `yt-state-directory`), resolved by `yt-cache-file-name`.
 - **Shutdown:** `kill-emacs-hook` closes the database at depth 90, so it runs after the player has finalized.
 
 ## 6. Feed UI (`yt-feed.el`, `yt-info.el`, `yt-select.el`)
@@ -262,7 +264,7 @@ This design means **no file holding all browser cookies ever exists**. Running `
 - Default sort is Age, newest first.
 - Faces are `defface`s inheriting from standard faces: `yt-feed-age`, `-duration`, `-channel`, `-title`, `-title-unwatched`, `-title-watched`, `-live`, `-upcoming`, `-short`, `-new-marker`.
 
-**Header line** (not the mode line): the auth state as a login button if not `ok`, "updated 5m ago", the active filter, and the visible count.
+**Header line** (not the mode line). Because of this the column names are tabulated-list's "fake header", the first buffer line (`tabulated-list-use-header-line` is nil; changed in M2): the auth state as a login button if not `ok`, "updated 5m ago", the active filter, and the visible count.
 - `mode-line-process` shows " Refreshing…" only while a fetch is running.
 - One **global** 5-minute timer re-prints the visible feed buffers that aren't currently refreshing, so the ages stay current.
 
@@ -587,7 +589,7 @@ The project does not edit the dotfiles. Development and testing happen in the sa
 - Sets `XDG_STATE_HOME` and `XDG_CACHE_HOME` to `<repo>/.sandbox/{state,cache}`, and sets `yt-runtime-directory` to `$XDG_RUNTIME_DIR/yt-sandbox` (0700). `XDG_CONFIG_HOME` stays real, because yt-dlp finds the Chromium profile through it (docs/spike.md).
 - Unsets `LD_LIBRARY_PATH`, as the dev shell also does. The host shell's value makes the flake's mpv fail with `GLIBC_2.43 not found` (docs/spike.md).
 - Puts the flake's mpv, yt-dlp, vlc, `yt-export-cookies`, and curl first on PATH.
-- Runs `emacs --init-directory=<repo>/.sandbox/emacs.d --name yt-sandbox`. That init directory holds a generated `init.el` that only adds the repo to `load-path`, `(require 'yt)`, and binds `C-c y`.
+- Runs `emacs -q --no-site-file --init-directory=<repo>/.sandbox/emacs.d --name yt-sandbox -l <repo>/sandbox/init.el` (changed in M2). The sandbox is default Emacs plus yt: `-q --no-site-file` skips every host init file, including `~/.emacs`, `default.el` and the `site-lisp` of the Nix profiles, which nixpkgs' `site-start.el` would otherwise add to `load-path`. The tracked `sandbox/init.el` is the only config: it adds the repo to `load-path`, generates and loads the autoloads, sets `yt-runtime-directory` and `custom-file`, and binds `C-c y`. Emacs's own files stay in `.sandbox/emacs.d`.
 - **Effect:**
   - Its own cookie export, from the dedicated profile, into `.sandbox/state`.
   - Its own SQLite file and its own mpv socket names.
@@ -644,7 +646,7 @@ After each milestone: report what changed, what was tested, and what is still op
 |---|---|---|---|
 | **M0** | `git init`, skeleton with license headers in every file (GPL-3.0-or-later, SPDX), Makefile with the isolation guard, flake (`emacs-test`, devShell, `apps.test`, `apps.sandbox`, `checks`, `yt-export-cookies`, `runtime`), stub `yt`, README skeleton, CHANGELOG. **Manual spike in the sandbox:** create the dedicated Chromium profile, run the exporter, run `:ytsubs` by hand, confirm the named `loadfile` + options form against mpv 0.41, confirm `--print urls` + vlc. | `nix flake check` passes. `nix run .#sandbox` opens a separate Emacs. `make` refuses to run with the host Emacs. Spike findings are recorded in `docs/spike.md`. | Isolation-guard test, fixture leak guard |
 | **M1** | yt-process, yt-video, yt-ytdlp, yt-auth, a basic yt-doctor: `yt-login` (profile selection, exporter, verification), per-run cookies with write-back, the classifier, `yt-debug-fetch-feed` | In the sandbox: `yt-login` then `yt-debug-fetch-feed` lists real items. With the profile logged out, the expired message appears. | Process, NDJSON, and stop tests; the classifier table; auth (filter, modes, generation, join); argv assertions |
-| **M2** | yt-cache and yt-feed: `M-x yt` is the home view (cache first, then refresh), with header line, `g`/`G`, filters, `w`/`u`, `b`/`y`/`Y`, and automatic login on first run | After a sandbox restart the cached feed shows immediately. Point stays on the same video id after refresh. `(yt)` returns in under 200 ms under hang mode. | Render, sort, point, filters, cache round-trip and reopen, watched-hook redraw |
+| **M2** (done) | yt-cache and yt-feed: `M-x yt` is the home view (cache first, then refresh), with header line, `g`/`G`, filters, `w`/`u`, `b`/`y`/`Y`, and automatic login on first run | After a sandbox restart the cached feed shows immediately. Point stays on the same video id after refresh. `(yt)` returns in under 200 ms under hang mode. | Render, sort, point, filters, cache round-trip and reopen, watched-hook redraw |
 | **M3** | yt-player and yt-vlc: `RET`/`v` plays through VLC, marked watched at start, with format fallback. **All three requirements are now covered** (playback via VLC). | `v` on a sandbox feed row plays with separate audio and video streams. | argv, resolver `-j` parsing (combined vs separate formats, `available_at`, headers), wait-timer, format-retry scenario |
 | **M4** | yt-mpv: spawn with WAYLAND_DISPLAY, IPC, play/enqueue/pause/seek/speed/next/stop/quit, `yt-player-mode`, watched near the end, resume, cleanup on exit, the `auto` backend default, transient repeat, `homeModules.default` (mpv for the host) | In the sandbox, `RET` plays in mpv. `C-c y SPC` pauses. Closing mpv leaves no socket behind and marks the video watched past 90%. | The full fake-socket suite (above) |
 | **M5** | Channels view, channel uploads (`o`, `l`), info buffer (`i`, second-pass queue), search (`C-c y s`), playlist buffer | `l` → `RET` shows uploads. `i` shows the description and chapters, and a chapter plays from its timestamp. | Parsers, rendering, the queue limit |

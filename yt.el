@@ -125,6 +125,38 @@ YouTube: the cookies are Google session tokens."
   :group 'yt-feed
   :package-version '(yt . "0.1.0"))
 
+(defcustom yt-feed-stop-after-known 10
+  "Stop a feed refresh after this many videos in a row that are cached.
+nil means always fetch `yt-feed-limit' videos.  The first refresh of
+a session, and \\[universal-argument] \\[yt-feed-refresh], always fetch them all."
+  :type '(choice (natnum :tag "Videos") (const :tag "Never stop early" nil))
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-feed-refresh-interval 900
+  "Seconds for which \\[yt] shows the feed without refreshing it."
+  :type 'natnum
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-feed-hide-watched nil
+  "Non-nil means the feed hides videos you have watched."
+  :type 'boolean
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-feed-hide-shorts nil
+  "Non-nil means the feed hides Shorts."
+  :type 'boolean
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-feed-hide-upcoming nil
+  "Non-nil means the feed hides upcoming premieres and live streams."
+  :type 'boolean
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
 (defcustom yt-state-directory (expand-file-name "yt" (xdg-state-home))
   "Directory for persistent yt state, such as cookies and the cache.
 It is created with mode 0700, and yt refuses to use it if it is
@@ -138,6 +170,12 @@ nil means the \"yt\" subdirectory of $XDG_RUNTIME_DIR.  The
 directory must be owned by the current user and have mode 0700;
 yt never falls back to a shared directory such as /tmp."
   :type '(choice (const :tag "$XDG_RUNTIME_DIR/yt" nil) directory)
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-cache-file nil
+  "SQLite file holding the video cache and watch history.
+nil means \"yt.sqlite\" in `yt-state-directory'."
+  :type '(choice (const :tag "yt.sqlite in the state directory" nil) file)
   :package-version '(yt . "0.1.0"))
 
 (defun yt--ensure-private-directory (dir)
@@ -227,10 +265,14 @@ The file is replaced atomically and has mode 0600."
 ;;;###autoload
 (defun yt ()
   "Show the subscription feed of your YouTube account.
-Not implemented yet: the feed arrives in milestone M2."
+The feed appears at once from the cache and is then refreshed, unless
+it was refreshed less than `yt-feed-refresh-interval' seconds ago.
+The first time, this signs in with \\[yt-login]."
   (interactive)
-  (user-error "The yt subscription feed is not implemented yet"))
+  (require 'yt-feed)
+  (yt-feed-subscriptions))
 
+(declare-function yt-feed-subscriptions "yt-feed" ())
 (declare-function yt-login "yt-auth" (&optional choose))
 (declare-function yt-doctor "yt-doctor" ())
 

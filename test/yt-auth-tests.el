@@ -47,7 +47,7 @@ CALLBACK, if non-nil, is also passed to `yt-auth-export'."
     (should (equal (yt-auth-chromium-profiles)
                    '(("Default" . "Person 1") ("Profile 1" . "emacs-yt")
                      ("Profile 2" . "Other"))))
-    (should (equal (yt-auth--profile-label "Profile 1") "‘emacs-yt’ (Profile 1)"))))
+    (should (equal (yt-auth-profile-label "Profile 1") "‘emacs-yt’ (Profile 1)"))))
 
 (ert-deftest yt-auth-read-profile ()
   "The emacs-yt profile is the default; Default needs confirmation."

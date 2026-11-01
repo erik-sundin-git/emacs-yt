@@ -115,7 +115,7 @@ The list comes from \"Local State\" in `yt-chromium-directory'."
   "Return the Chromium profile directory to read cookies from, or nil."
   (or yt-cookie-profile (yt-state-get 'cookie-profile)))
 
-(defun yt-auth--profile-label (dir)
+(defun yt-auth-profile-label (dir)
   "Return a description of the Chromium profile directory DIR."
   (let ((name (cdr (assoc dir (yt-auth-chromium-profiles)))))
     (if (and name (not (equal name dir)))
@@ -152,7 +152,7 @@ Google session, and its cookies would be stored in a file; use it anyway? ")))
   (let* ((summary (ignore-errors
                     (yt-process-parse-json (plist-get err :stdout))))
          (problem (or (plist-get summary :error) ""))
-         (label (yt-auth--profile-label (yt-auth-profile))))
+         (label (yt-auth-profile-label (yt-auth-profile))))
     (cond
      ((eq (plist-get err :type) 'missing)
       (list :class 'missing
@@ -396,6 +396,15 @@ function that retries it, and ON-ERROR is the caller's callback."
 
 ;;;; Commands
 
+(defun yt-auth-ensure-profile (&optional choose)
+  "Return the Chromium profile to use, asking for it if none is chosen.
+Also ask if CHOOSE is non-nil, and remember the answer."
+  (when (or choose (not (yt-auth-profile)))
+    (when yt-cookie-profile
+      (user-error "The profile is set by `yt-cookie-profile'; change that option instead"))
+    (yt-state-put 'cookie-profile (yt-auth-read-profile)))
+  (yt-auth-profile))
+
 ;;;###autoload
 (defun yt-login (&optional choose)
   "Sign in to YouTube with the cookies of a dedicated Chromium profile.
@@ -405,11 +414,8 @@ check that they work.  Use a profile that is signed in only to
 YouTube: the cookies are Google session tokens and are stored in a
 mode 0600 file in `yt-state-directory'."
   (interactive "P")
-  (when (or choose (not (yt-auth-profile)))
-    (when yt-cookie-profile
-      (user-error "The profile is set by `yt-cookie-profile'; change that option instead"))
-    (yt-state-put 'cookie-profile (yt-auth-read-profile)))
-  (let ((label (yt-auth--profile-label (yt-auth-profile))))
+  (yt-auth-ensure-profile choose)
+  (let ((label (yt-auth-profile-label (yt-auth-profile))))
     (message "Reading YouTube cookies from Chromium profile %s..." label)
     (yt-auth-export (lambda (ok result)
                       (if ok
@@ -425,7 +431,7 @@ mode 0600 file in `yt-state-directory'."
                :key '(yt-auth . verify) :source 'verify :ignore-backoff t
                :on-success (lambda (_value _info)
                              (message "Signed in to YouTube with Chromium profile %s"
-                                      (yt-auth--profile-label (yt-auth-profile))))
+                                      (yt-auth-profile-label (yt-auth-profile))))
                :on-error (lambda (err) (message "%s" (plist-get err :message)))))
 
 ;;;###autoload

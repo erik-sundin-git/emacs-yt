@@ -17,6 +17,8 @@
 (require 'yt)
 (require 'yt-process)
 (require 'yt-auth)
+(require 'yt-cache)
+(require 'yt-feed)
 
 (defconst yt-test-dir
   (file-name-directory (or load-file-name buffer-file-name))
@@ -39,7 +41,7 @@
 (defun yt-test--assert-isolated ()
   "Signal an error unless every directory yt writes to is under the root."
   (dolist (dir (list "~" yt-state-directory (yt-ensure-runtime-directory)
-                     (xdg-cache-home) (xdg-config-home)))
+                     (yt-cache-file-name) (xdg-cache-home) (xdg-config-home)))
     (unless (yt-test-under-root-p dir)
       (error "Test isolation broken: %s is outside %s" dir yt-test-root))))
 
@@ -224,7 +226,7 @@ file it writes."
 DIRS is (YTDLP-DIR EXPORT-DIR): variables bound to the scenario
 directories of the fake yt-dlp and the fake cookie exporter.  The
 yt state, runtime and Chromium directories are fresh, and the
-sign-in state is reset."
+sign-in state, the cache and the feed buffers are reset."
   (declare (indent 1))
   (let ((root (make-symbol "root")))
     `(let* ((,root (make-temp-file (expand-file-name "scenario-" yt-test-root) t))
@@ -245,6 +247,11 @@ sign-in state is reset."
             (yt-auth--backoff nil)
             (yt-auth--stale-copies-cleaned t)
             (yt-ytdlp--version-checked t)
+            (yt-cache-file nil)
+            (yt-cache--db nil)
+            (yt-feed--fully-refreshed nil)
+            (yt-watched-changed-functions nil)
+            (yt-auth-state-change-hook nil)
             (process-environment
              (append (list (concat "FAKE_SCENARIO=" ,(car dirs))
                            (concat "FAKE_EXPORT_SCENARIO=" ,(cadr dirs)))
@@ -254,6 +261,10 @@ sign-in state is reset."
        (make-directory yt-chromium-directory t)
        (unwind-protect
            (progn ,@body)
+         (dolist (buffer (yt-feed--buffers))
+           (kill-buffer buffer))
+         (cancel-function-timers #'yt-feed--update-ages)
+         (yt-cache-close)
          (delete-directory ,root t)))))
 
 (provide 'yt-test-helpers)

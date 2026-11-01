@@ -35,11 +35,16 @@ nix flake check        # compile, checkdoc, lint and test in the Nix sandbox
 nix run .#sandbox
 #+end_src
 
-This opens a GUI Emacs that is separate from the host Emacs and its daemon.
-It has its own init directory (=.sandbox/emacs.d=), yt state (=.sandbox/state=),
-cache (=.sandbox/cache=) and runtime directory (=$XDG_RUNTIME_DIR/yt-sandbox=).
-It loads yt directly from the working tree, binds =C-c y= to =yt-map=, and puts
-the flake's mpv, yt-dlp, vlc and =yt-export-cookies= first on =PATH=.
+This opens a GUI Emacs that is separate from the host Emacs and its daemon:
+default Emacs plus yt.  It starts with =-q --no-site-file=, so it reads none of
+the host's config (=~/.emacs.d=, =~/.emacs=, =default.el=, the Nix profiles'
+=site-lisp=).  Its only config is [[file:sandbox/init.el][sandbox/init.el]], which loads yt from the
+working tree with generated autoloads and binds =C-c y= to =yt-map=.
+
+Emacs keeps its own files in =.sandbox/emacs.d=, and yt its state, cache and
+runtime files in =.sandbox/state=, =.sandbox/cache= and
+=$XDG_RUNTIME_DIR/yt-sandbox=.  The flake's mpv, yt-dlp, vlc and
+=yt-export-cookies= come first on =PATH=.
 
 * Privacy
 yt adds no telemetry.  The cookies it uses are Google-account session

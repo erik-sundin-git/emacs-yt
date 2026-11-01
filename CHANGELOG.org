@@ -1,6 +1,26 @@
 #+title: yt changelog
 
 * Unreleased
+** M2: cache and subscription feed
+- =yt-cache.el=: SQLite cache (mode 0600, WAL, busy timeout, schema
+  version) of allowlisted video fields, the order of each feed, watched
+  state and resume positions; =yt-mark-watched= with
+  =yt-watched-changed-functions=, and =yt-forget-history=.  Shorts inherit
+  the time of the video before them; a more exact time always wins.
+- =yt-feed.el=: =M-x yt= shows the cached feed at once and then refreshes it
+  asynchronously, signing in first if there are no cookies.  A refresh stops
+  after =yt-feed-stop-after-known= cached videos in a row, except the first
+  of a session; =G= cancels and refetches everything.  Point and each
+  window's position stay on the same video.
+- Header line with the sign-in state, last update, filters and count.
+- Filters that never refetch: a query (=s=, =/=; words, =@channel=,
+  =!exclude=), a channel (=c=, =C= clears) and toggles for watched videos,
+  Shorts and upcoming streams (=t w=, =t s=, =t u=).
+- =w= / =u= mark watched or not (on the region too), =b= browses, =y= / =Y=
+  copy the URL or "Title — URL".
+- The sandbox is now default Emacs plus yt: it starts with =-q
+  --no-site-file= and its only config is the tracked =sandbox/init.el=.
+- 29 new tests (88 in total).
 ** M1: sign-in and yt-dlp backend
 - =yt-process.el=: asynchronous runner with separate standard error, JSON,
   streamed NDJSON with early stop, timeouts, cancellation and one run per

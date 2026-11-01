@@ -116,7 +116,7 @@ Only the domain field of each cookie is read; values are ignored."
         (yt-doctor--directory "Runtime directory" #'yt-ensure-runtime-directory)
         (let ((profile (yt-auth-profile)))
           (yt-doctor--insert "Chromium profile"
-                             (if profile (yt-auth--profile-label profile)
+                             (if profile (yt-auth-profile-label profile)
                                "not chosen (M-x yt-login)")
                              (if profile 'success 'warning)))
         (yt-doctor--cookie-file)
