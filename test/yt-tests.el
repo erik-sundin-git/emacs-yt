@@ -118,9 +118,21 @@
 ;;;; Entry points
 
 (ert-deftest yt-test-entry-command-is-bound ()
-  "`yt-map' binds `y' to the `yt' command."
+  "`yt-map' opens the subscription feed on `y' and `RET', with labels."
   (should (eq (keymap-lookup yt-map "y") #'yt))
-  (should (commandp #'yt)))
+  (should (eq (keymap-lookup yt-map "RET") #'yt))
+  (should (equal (alist-get ?y (cdr yt-map)) '("subscriptions" . yt)))
+  (should (commandp #'yt))
+  (should (eq (indirect-function 'yt-subscriptions) (indirect-function 'yt)))
+  ;; The labelled player keys still reach their commands through `yt-map'.
+  (should (eq (keymap-lookup yt-map "SPC") #'yt-player-pause))
+  (should (eq (keymap-lookup yt-map "l") #'yt-player-playlist))
+  ;; Every binding of both maps has a label for which-key.
+  (dolist (map (list yt-map yt-player-map))
+    (map-keymap (lambda (_key binding)
+                  (unless (keymapp binding)
+                    (should (stringp (car-safe binding)))))
+                map)))
 
 (provide 'yt-tests)
 ;;; yt-tests.el ends here

@@ -79,7 +79,7 @@ try again; yt waits 15 minutes before sending more requests.
 
 | Key            | Command                                      |
 |----------------+----------------------------------------------|
-| =y=            | the subscription feed                        |
+| =y= or =RET=   | the subscription feed, yt's main view        |
 | =c=            | the channels you subscribe to                |
 | =s=            | search YouTube                               |
 | =f=            | choose a feed video with completion, play it |
@@ -95,6 +95,8 @@ try again; yt waits 15 minutes before sending more requests.
 | =!=            | log of playback problems                     |
 
 The player keys repeat without the prefix: =C-c y <right> <right> <right>=.
+With which-key, =C-c y= shows a short label for each key.
+=M-x yt= and =M-x yt-subscriptions= also open the subscription feed.
 
 In the feed, channel uploads and search results (and, for the video keys,
 the info and playlist buffers):

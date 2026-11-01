@@ -358,6 +358,10 @@ The first time, this signs in with \\[yt-login]."
   (require 'yt-feed)
   (yt-feed-subscriptions))
 
+;;;###autoload
+(defalias 'yt-subscriptions #'yt
+  "Show the subscription feed, yt's main view; the same as \\[yt].")
+
 (declare-function yt-feed-subscriptions "yt-feed" ())
 (declare-function yt-search "yt-feed" (query))
 (declare-function yt-select-play "yt-select" (video))
@@ -383,34 +387,38 @@ The first time, this signs in with \\[yt-login]."
 ;;;###autoload
 (defvar-keymap yt-player-map
   :doc "Keymap for controlling the player.
-It is bound under \\`P' in yt buffers, and its keys are also in `yt-map'."
-  "SPC" #'yt-player-pause
-  "<left>" #'yt-player-seek-backward
-  "<right>" #'yt-player-seek-forward
-  "<down>" #'yt-player-seek-backward-more
-  "<up>" #'yt-player-seek-forward-more
-  "[" #'yt-player-slower
-  "]" #'yt-player-faster
-  "=" #'yt-player-normal-speed
-  "n" #'yt-player-next
-  "p" #'yt-player-previous
-  "l" #'yt-player-playlist
-  "S" #'yt-player-stop
-  "Q" #'yt-player-quit
-  "!" #'yt-player-show-log)
+It is bound under \\`P' in yt buffers, and its keys are also in `yt-map'.
+Each binding has a short label, which which-key shows."
+  "SPC" '("pause" . yt-player-pause)
+  "<left>" '("back 5 s" . yt-player-seek-backward)
+  "<right>" '("forward 5 s" . yt-player-seek-forward)
+  "<down>" '("back 1 min" . yt-player-seek-backward-more)
+  "<up>" '("forward 1 min" . yt-player-seek-forward-more)
+  "[" '("slower" . yt-player-slower)
+  "]" '("faster" . yt-player-faster)
+  "=" '("normal speed" . yt-player-normal-speed)
+  "n" '("next video" . yt-player-next)
+  "p" '("previous video" . yt-player-previous)
+  "l" '("playlist" . yt-player-playlist)
+  "S" '("stop" . yt-player-stop)
+  "Q" '("quit player" . yt-player-quit)
+  "!" '("player log" . yt-player-show-log))
 
 ;;;###autoload
 (defvar-keymap yt-map
   :doc "Prefix keymap for yt commands.
-Bind it to a key of your choice, for example \\`C-c y'."
+Bind it to a key of your choice, for example \\`C-c y'.  Its main
+view, the subscription feed, is on \\`y' and \\`RET'.  Each binding
+has a short label, which which-key shows."
   :parent yt-player-map
-  "y" #'yt
-  "u" #'yt-play-url
-  "c" #'yt-channels
-  "s" #'yt-search
-  "f" #'yt-select-play
-  "L" #'yt-login
-  "d" #'yt-doctor)
+  "y" '("subscriptions" . yt)
+  "RET" '("subscriptions" . yt)
+  "c" '("channels" . yt-channels)
+  "s" '("search" . yt-search)
+  "f" '("find video" . yt-select-play)
+  "u" '("play URL" . yt-play-url)
+  "L" '("sign in" . yt-login)
+  "d" '("diagnostics" . yt-doctor))
 
 (provide 'yt)
 ;;; yt.el ends here

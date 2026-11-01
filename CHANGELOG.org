@@ -1,6 +1,11 @@
 #+title: yt changelog
 
 * Unreleased
+** After M7
+- =C-c y RET= opens the subscription feed too, every key of =yt-map= has a
+  label for which-key ("subscriptions", "channels", …), and
+  =yt-subscriptions= is another name for =yt=, so the main view is easy to
+  find.
 ** M7: thumbnails, diagnostics and documentation
 - =yt-thumbs.el=: thumbnails from i.ytimg.com, fetched with curl without
   cookies, four at a time, once per video, through a =.part= file; the feed
