@@ -90,6 +90,12 @@ The playlist is a list of plists with :index (from 0), :id, :title,
 (defvar yt-player-playlist-changed-hook nil
   "Hook run by backends when their playlist may have changed.")
 
+(defvar yt-player-file-started-functions nil
+  "Abnormal hook run with the `yt-video' a backend started to play.")
+
+(defvar yt-player-resolve-failed-functions nil
+  "Abnormal hook run with a `yt-video' whose streams could not be resolved.")
+
 (defun yt-player--mpv-available-p ()
   "Return non-nil if mpv and yt's mpv backend are installed."
   (and (locate-library "yt-mpv")
@@ -231,7 +237,10 @@ replaces a waiting one, unless either is INDEPENDENT."
       (lambda ()
         (setq yt-player--current-backend backend)
         (yt-player-backend-play backend video streams :start start))))
-   #'yt-player--failed))
+   (lambda (err)
+     (yt-player--failed err)
+     (unless (eq (plist-get err :type) 'cancelled)
+       (run-hook-with-args 'yt-player-resolve-failed-functions video)))))
 
 ;;;; Queueing
 
@@ -264,6 +273,7 @@ playlist in the order they were queued."
           t))
        (lambda (err)
          (yt-player--failed err)
+         (run-hook-with-args 'yt-player-resolve-failed-functions video)
          (yt-player--queue-next))
        :key '(yt-player . enqueue)))))
 
@@ -314,6 +324,7 @@ Resume where you stopped watching, unless FROM-START is non-nil.
 Interactively, play the video at point, or ask for a URL; a prefix
 argument plays from the start."
   (interactive (list (yt-player--read-video) nil current-prefix-arg))
+  (yt-player--shuffle-stop)
   (let ((start (and (not from-start) (yt-player--resume-position video))))
     (when start
       (message "Resuming at %s; %s plays from the start"
@@ -324,6 +335,7 @@ argument plays from the start."
 ;;;###autoload
 (defun yt-play-at (video start &optional backend)
   "Play VIDEO with BACKEND from START seconds."
+  (yt-player--shuffle-stop)
   (yt-player--start (or backend (yt-player-backend)) video start))
 
 ;;;###autoload
@@ -370,6 +382,7 @@ queue videos."
   (let ((pending (or (yt-process-cancel '(yt-player . resolve))
                      (and (timerp yt-player--wait-timer)
                           (progn (cancel-timer yt-player--wait-timer) t)))))
+    (yt-player--shuffle-stop)
     (setq yt-player--wait-timer nil
           yt-player--queue nil)
     (yt-process-cancel '(yt-player . enqueue))
@@ -377,6 +390,105 @@ queue videos."
            (yt-player-backend-stop yt-player--current-backend))
           ((not pending)
            (message "Nothing is playing")))))
+
+;;;; Shuffling
+
+(defvar yt-player-shuffle-ahead 2
+  "Number of videos kept queued in mpv while shuffling.")
+
+(defvar yt-player-shuffle-function #'yt-player--shuffled
+  "Function returning a list in the order to shuffle it into.")
+
+(cl-defstruct (yt-player--shuffle (:constructor yt-player--shuffle-create)
+                                  (:copier nil))
+  "A shuffle in progress.
+NAME describes what is shuffled.  REST are the videos not queued
+yet, in the order they will be.  PENDING maps the ids of the videos
+queued or playing but not started yet to t."
+  name rest (pending (make-hash-table :test #'equal)))
+
+(defvar yt-player--shuffle nil
+  "The shuffle in progress, or nil.")
+
+(defun yt-player--shuffled (list)
+  "Return a copy of LIST in random order."
+  (let ((vector (vconcat list)))
+    (cl-loop for i from (1- (length vector)) downto 1
+             do (cl-rotatef (aref vector i) (aref vector (random (1+ i)))))
+    (append vector nil)))
+
+(defun yt-player--shuffle-stop ()
+  "End the shuffle in progress, dropping the videos it still had to queue."
+  (when-let* ((shuffle yt-player--shuffle))
+    (setq yt-player--shuffle nil
+          yt-player--queue
+          (seq-remove (lambda (item)
+                        (gethash (yt-video-id (cdr item))
+                                 (yt-player--shuffle-pending shuffle)))
+                      yt-player--queue))
+    (remove-hook 'yt-player-file-started-functions #'yt-player--shuffle-advance)
+    (remove-hook 'yt-player-resolve-failed-functions #'yt-player--shuffle-advance)))
+
+(defun yt-player--shuffle-top-up ()
+  "Queue videos of the shuffle until `yt-player-shuffle-ahead' wait.
+End the shuffle once every video started."
+  (when-let* ((shuffle yt-player--shuffle))
+    (let ((pending (yt-player--shuffle-pending shuffle))
+          (more nil))
+      (while (and (yt-player--shuffle-rest shuffle)
+                  (< (hash-table-count pending) yt-player-shuffle-ahead))
+        (let ((video (pop (yt-player--shuffle-rest shuffle))))
+          (puthash (yt-video-id video) t pending)
+          (push video more)))
+      (when more
+        (yt-player--enqueue 'mpv (nreverse more)))
+      (when (and (not (yt-player--shuffle-rest shuffle))
+                 (zerop (hash-table-count pending)))
+        (yt-player--shuffle-stop)))))
+
+(defun yt-player--shuffle-advance (video)
+  "Note that VIDEO of the shuffle started or failed, and queue more."
+  (when-let* ((shuffle yt-player--shuffle)
+              (id (yt-video-id video)))
+    (when (gethash id (yt-player--shuffle-pending shuffle))
+      (remhash id (yt-player--shuffle-pending shuffle))
+      (yt-player--shuffle-top-up))))
+
+(defun yt-player-shuffle (videos &optional name)
+  "Play VIDEOS in random order in mpv; NAME describes them.
+One video plays at once and `yt-player-shuffle-ahead' more wait in
+mpv's playlist; each time one starts, the next is resolved, so a long
+playlist does not send YouTube a request per video at once.  Upcoming
+streams are left out.  Playing another video ends the shuffle."
+  (yt-player--load 'mpv)
+  (let* ((seen (make-hash-table :test #'equal))
+         (videos (funcall yt-player-shuffle-function
+                          (seq-filter (lambda (video)
+                                        (and (yt-video-id video)
+                                             (not (eq (yt-video-live-status video) 'is_upcoming))
+                                             (not (gethash (yt-video-id video) seen))
+                                             (puthash (yt-video-id video) t seen)))
+                                      videos))))
+    (unless videos
+      (user-error "No videos to shuffle"))
+    (yt-player--shuffle-stop)
+    (let ((shuffle (yt-player--shuffle-create :name name :rest (cdr videos))))
+      ;; The first video replaces mpv's playlist, so the next ones are
+      ;; queued only once it started.
+      (puthash (yt-video-id (car videos)) t (yt-player--shuffle-pending shuffle))
+      (setq yt-player--shuffle shuffle)
+      (add-hook 'yt-player-file-started-functions #'yt-player--shuffle-advance)
+      (add-hook 'yt-player-resolve-failed-functions #'yt-player--shuffle-advance)
+      (yt-player--start 'mpv (car videos) (yt-player--resume-position (car videos)))
+      (message "Shuffling %d videos%s" (length videos)
+               (if name (format " of “%s”" name) "")))))
+
+;;;###autoload
+(defun yt-player-shuffle-playlist ()
+  "Shuffle the player's playlist."
+  (interactive)
+  (yt-player--command 'shuffle)
+  (message "Shuffled the playlist"))
 
 ;;;; Player commands
 

@@ -382,6 +382,7 @@ The first time, this signs in with \\[yt-login]."
 (declare-function yt-player-next "yt-player" ())
 (declare-function yt-player-previous "yt-player" ())
 (declare-function yt-player-show-log "yt-player" ())
+(declare-function yt-player-shuffle-playlist "yt-player" ())
 (declare-function yt-login "yt-auth" (&optional choose))
 (declare-function yt-doctor "yt-doctor" ())
 
@@ -401,6 +402,7 @@ Each binding has a short label, which which-key shows."
   "n" '("next video" . yt-player-next)
   "p" '("previous video" . yt-player-previous)
   "l" '("playlist" . yt-player-playlist)
+  "z" '("shuffle playlist" . yt-player-shuffle-playlist)
   "S" '("stop" . yt-player-stop)
   "Q" '("quit player" . yt-player-quit)
   "!" '("player log" . yt-player-show-log))

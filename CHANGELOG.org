@@ -2,6 +2,10 @@
 
 * Unreleased
 ** After M7
+- Shuffle: =z= in a feed or playlist buffer (or on a playlist in a
+  playlists list) plays the videos shown in random order in mpv, keeping
+  two queued and fetching the next as each starts.  =C-c y z= shuffles
+  mpv's current playlist.
 - Channel playlists: =O= on a video (or in the channels list) lists the
   playlists its channel made; =RET= shows a playlist's videos in playlist
   order, refetched whole.  =+= saves a playlist in yt and =-= forgets it;

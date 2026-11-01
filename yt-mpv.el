@@ -343,10 +343,13 @@ with nil and an error message.  Return the request id."
   (yt-player-update-mode-line (yt-mpv--state)))
 
 (defun yt-mpv--mark-started (entry)
-  "Mark the video of ENTRY watched if videos count when they start."
+  "Note that the video of ENTRY started.
+Mark it watched if videos count when they start, and run
+`yt-player-file-started-functions'."
   (when-let* ((video (yt-mpv--entry-video entry)))
     (when (and (eq yt-mark-watched-when 'start) (yt-video-id video))
-      (yt-mark-watched video))))
+      (yt-mark-watched video))
+    (run-hook-with-args 'yt-player-file-started-functions video)))
 
 (defun yt-mpv--start-file (id)
   "Handle the start of playlist entry ID."
@@ -467,6 +470,7 @@ Stream URLs expire after some hours, which breaks queued entries."
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))
     (yt-mpv--reset)
+    (yt-player--shuffle-stop)
     (setq yt-mpv--process nil
           yt-mpv--socket nil)
     (when (eq yt-player--current-backend 'mpv)
@@ -570,6 +574,7 @@ RETRIED non-nil means this is a second try after an error."
     ('next (yt-mpv-send '("playlist-next" "weak")))
     ('previous (yt-mpv-send '("playlist-prev" "weak")))
     ('quit (yt-mpv-send '("quit")))
+    ('shuffle (yt-mpv-send '("playlist-shuffle") #'yt-mpv--report))
     ('play-index (yt-mpv-send (list "playlist-play-index" (car args)) #'yt-mpv--report))
     ('remove (yt-mpv-send (list "playlist-remove" (car args)) #'yt-mpv--report))
     (_ (cl-call-next-method))))

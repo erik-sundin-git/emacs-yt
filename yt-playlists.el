@@ -176,6 +176,21 @@
   (yt-feed-playlist (plist-get playlist :id) (plist-get playlist :url)
                     (plist-get playlist :title)))
 
+(defun yt-playlists-shuffle (playlist)
+  "Play the videos of PLAYLIST, the playlist at point, in random order.
+The playlist opens first; if it was never fetched, the shuffle starts
+once its videos arrive."
+  (interactive (list (yt-playlists--at-point)) yt-playlists-mode)
+  (let ((buffer (save-window-excursion (yt-playlists-open playlist))))
+    (pop-to-buffer-same-window buffer)
+    (with-current-buffer buffer
+      (if (and yt-feed--videos (not yt-feed--refreshing))
+          (yt-feed-shuffle)
+        (letrec ((once (lambda ()
+                         (remove-hook 'yt-feed-refreshed-hook once t)
+                         (yt-feed-shuffle))))
+          (add-hook 'yt-feed-refreshed-hook once nil t))))))
+
 (defun yt-playlists-save (playlist)
   "Save PLAYLIST, the playlist at point, in yt."
   (interactive (list (yt-playlists--at-point)) yt-playlists-mode)
@@ -210,6 +225,7 @@ An empty QUERY shows all of them."
   :doc "Keymap for `yt-playlists-mode'."
   :parent tabulated-list-mode-map
   "RET" #'yt-playlists-open
+  "z" #'yt-playlists-shuffle
   "+" #'yt-playlists-save
   "-" #'yt-playlists-forget
   "d" #'yt-playlists-forget

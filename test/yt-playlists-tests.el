@@ -148,6 +148,33 @@
       (should (string-match-p "No saved playlists" (buffer-string))))
     (should (= (yt-test-calls ytdlp) 0))))
 
+(ert-deftest yt-playlists-shuffle-keys ()
+  "\`z' shuffles the shown videos of a feed, and a playlist from the list."
+  (yt-playlists-test--with ytdlp
+    (let (shuffled)
+      (cl-letf (((symbol-function 'yt-player-shuffle)
+                 (lambda (videos &optional name)
+                   (setq shuffled (list (mapcar #'yt-video-id videos) name)))))
+        (yt-test-step ytdlp 1 :out (yt-test-fixture-string "channel-playlists.json"))
+        (yt-test-step ytdlp 2 :mode "stream" :out (yt-test-fixture-string "playlist.ndjson"))
+        (with-current-buffer (yt-playlists-test--wait
+                              (apply #'yt-channel-playlists yt-playlists-test--channel))
+          (should (eq (keymap-lookup yt-playlists-mode-map "z") #'yt-playlists-shuffle))
+          (yt-playlists-test--goto "PLfakeplaylist000000000001")
+          ;; Never fetched: the shuffle waits for the videos.
+          (call-interactively #'yt-playlists-shuffle)
+          (should-not shuffled))
+        (yt-test-wait-until (lambda () shuffled) "shuffle after refresh")
+        (should (equal shuffled '(("fakeplvid01" "fakeplvid02" "fakeplvid03")
+                                  "Fake series one")))
+        ;; In the feed, only the videos passing the filter.
+        (with-current-buffer "*yt: Playlist: Fake series one*"
+          (should (eq (keymap-lookup yt-feed-mode-map "z") #'yt-feed-shuffle))
+          (yt-mark-watched "fakeplvid02")
+          (yt-feed-toggle-hide-watched)
+          (yt-feed-shuffle)
+          (should (equal shuffled '(("fakeplvid01" "fakeplvid03") "Fake series one"))))))))
+
 (ert-deftest yt-playlists-from-video-and-channels-list ()
   "\\`O' lists the playlists of the channel at hand."
   (yt-playlists-test--with ytdlp

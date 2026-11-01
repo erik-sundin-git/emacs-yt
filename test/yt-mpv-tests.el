@@ -542,6 +542,111 @@ A sleeping process stands in for mpv."
                        '("playlist-remove" 1)))
         (kill-buffer)))))
 
+;;;; Shuffling
+
+(defun yt-mpv-test--loads (server)
+  "Return the loadfile commands SERVER received, oldest first."
+  (mapcar (lambda (m) (plist-get m :command))
+          (seq-filter (lambda (m) (equal (yt-mpv-test--command-name m) "loadfile"))
+                      (yt-mpv-test--server-received server))))
+
+(defun yt-mpv-test--start-entry (server id)
+  "Wait until entry ID has its video, then start it through SERVER."
+  (yt-test-wait-until (lambda () (and (gethash id yt-mpv--entries)
+                                      (yt-mpv--entry-video (gethash id yt-mpv--entries))))
+                      "entry video")
+  (yt-mpv-test--play-through server id))
+
+(ert-deftest yt-mpv-shuffle-queues-a-few-at-a-time ()
+  "A shuffle plays one video and keeps two queued, refilling as they start."
+  (yt-mpv-test--with-mpv (ytdlp _mpv)
+    (let* ((server (yt-mpv-test--connect))
+           (yt-player-shuffle-function #'identity)
+           (yt-player-shuffle-ahead 2)
+           (yt-player--shuffle nil)
+           (yt-player--queue nil)
+           (yt-player--queue-busy nil)
+           (yt-player-file-started-functions nil)
+           (yt-player-resolve-failed-functions nil)
+           (videos (mapcar (lambda (n) (yt-mpv-test--video (format "videoshuf%02d" n)))
+                           (number-sequence 1 5)))
+           (url (lambda (n) (car (last (yt-test-argv ytdlp n))))))
+      (dotimes (n 4)
+        (yt-test-step ytdlp (1+ n) :out (yt-test-fixture-string "resolve-combined.json")))
+      (yt-test-step ytdlp 5 :exit 1 :err "ERROR: [youtube] videoshuf05: Unable to extract something\n")
+      (yt-player-shuffle videos "Five")
+      ;; The first video alone: queuing more now would be wiped by its
+      ;; loadfile replace.
+      (yt-mpv-test--wait-for server "loadfile")
+      (yt-test-sleep 0.2)
+      (should (= (yt-test-calls ytdlp) 1))
+      (should (equal (plist-get (car (yt-mpv-test--loads server)) :flags) "replace"))
+      (should (string-suffix-p "videoshuf01" (funcall url 1)))
+      ;; Once it started, two more are queued, in order.
+      (yt-mpv-test--start-entry server 1)
+      (yt-mpv-test--wait-for server "loadfile" 3)
+      (should (equal (mapcar (lambda (c) (plist-get c :flags)) (cdr (yt-mpv-test--loads server)))
+                     '("append-play" "append-play")))
+      (should (string-suffix-p "videoshuf02" (funcall url 2)))
+      (should (string-suffix-p "videoshuf03" (funcall url 3)))
+      (yt-test-sleep 0.2)
+      (should (= (yt-test-calls ytdlp) 3))
+      ;; Each start queues one more.
+      (yt-mpv-test--start-entry server 2)
+      (yt-mpv-test--wait-for server "loadfile" 4)
+      (should (string-suffix-p "videoshuf04" (funcall url 4)))
+      ;; The last one fails to resolve; the shuffle carries on without it.
+      (yt-mpv-test--start-entry server 3)
+      (yt-test-wait-until (lambda () (= (yt-test-calls ytdlp) 5)) "fifth resolve")
+      (yt-test-wait-until (lambda () (null (yt-player--shuffle-rest yt-player--shuffle)))
+                          "rest used up")
+      (should yt-player--shuffle)
+      (yt-mpv-test--start-entry server 4)
+      (yt-test-wait-until (lambda () (null yt-player--shuffle)) "shuffle done")
+      (should (= (length (yt-mpv-test--loads server)) 4)))))
+
+(ert-deftest yt-mpv-shuffle-ends-when-playing-something-else ()
+  "Playing another video ends the shuffle and drops its queued videos."
+  (yt-mpv-test--with-mpv (ytdlp _mpv)
+    (let* ((server (yt-mpv-test--connect))
+           (yt-player-shuffle-function #'identity)
+           (yt-player--shuffle nil)
+           (yt-player--queue nil)
+           (yt-player--queue-busy nil)
+           (yt-player-file-started-functions nil)
+           (yt-player-resolve-failed-functions nil)
+           (videos (mapcar (lambda (n) (yt-mpv-test--video (format "videostop%02d" n)))
+                           (number-sequence 1 4))))
+      (dotimes (n 3)
+        (yt-test-step ytdlp (1+ n) :out (yt-test-fixture-string "resolve-combined.json")))
+      (yt-player-shuffle videos)
+      (yt-mpv-test--wait-for server "loadfile")
+      (should yt-player--shuffle)
+      (yt-play (yt-mpv-test--video "videoother1"))
+      (should-not yt-player--shuffle)
+      (should-not yt-player-file-started-functions)
+      (yt-mpv-test--wait-for server "loadfile" 2)
+      (yt-mpv-test--start-entry server 1)
+      (yt-test-sleep 0.3)
+      ;; Nothing more of the shuffle was queued.
+      (should (= (yt-test-calls ytdlp) 2)))))
+
+(ert-deftest yt-mpv-shuffle-playlist-command ()
+  "\[yt-player-shuffle-playlist] asks mpv to shuffle its playlist."
+  (yt-mpv-test--with-mpv (_ytdlp _mpv)
+    (let ((server (yt-mpv-test--connect)))
+      (setq yt-player--current-backend 'mpv)
+      (should (eq (keymap-lookup yt-map "z") #'yt-player-shuffle-playlist))
+      (yt-player-shuffle-playlist)
+      (should (equal (plist-get (yt-mpv-test--wait-for server "playlist-shuffle") :command)
+                     '("playlist-shuffle"))))))
+
+(ert-deftest yt-mpv-shuffled-is-a-permutation ()
+  "The default shuffle keeps every element."
+  (let ((list (number-sequence 1 50)))
+    (should (equal (sort (yt-player--shuffled list) #'<) list))
+    (should-not (yt-player--shuffled nil))))
+
 (ert-deftest yt-mpv-check-reports-missing-mpv ()
   "Without mpv, playing explains how to install it."
   (let ((yt-mpv-program "no-such-mpv-program"))

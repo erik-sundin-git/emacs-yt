@@ -93,6 +93,7 @@ try again; yt waits 15 minutes before sending more requests.
 | =[= / =]= / ===  | slower / faster / normal speed             |
 | =n= / =p=      | next / previous in the playlist              |
 | =l=            | the playlist                                 |
+| =z=            | shuffle mpv's playlist                       |
 | =S= / =Q=      | stop / quit mpv                              |
 | =!=            | log of playback problems                     |
 
@@ -121,13 +122,19 @@ the info and playlist buffers):
 | =t i=         | thumbnails                                               |
 | =l=           | the channels                                             |
 | =+= / =-=     | in a playlist: save it in yt / forget it                 |
+| =z=           | play the videos shown in random order, in mpv            |
 | =L=           | sign in                                                  |
 | =S=           | sort by the column at point (tabulated-list)             |
 
 In the channels list, =o= shows a channel's uploads and =O= its playlists.
 A channel's playlists, and the saved ones (=C-c y P=), open with =RET= in
-playlist order; =+= saves the playlist at point, =-= or =d= forgets it, and
-=b= opens it in a browser.  Saved playlists live in yt's cache, not in your
+playlist order; =+= saves the playlist at point, =-= or =d= forgets it, =z=
+shuffles it, and =b= opens it in a browser.
+
+Shuffling plays one video at once and keeps two more queued in mpv; each
+time one starts, the next is fetched, so a long playlist does not send
+YouTube a request per video at once.  =n= skips ahead; playing anything
+else ends the shuffle.  Saved playlists live in yt's cache, not in your
 YouTube account, and show how many of their videos you have not watched.
 
 With embark, =embark-act= on a video (a completion candidate or the row at

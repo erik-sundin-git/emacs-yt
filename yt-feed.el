@@ -571,6 +571,9 @@ Stop the timer when no feed buffer is left."
       "Offline: showing the cached feed"
     (or (plist-get err :message) "Refreshing the feed failed")))
 
+(defvar-local yt-feed-refreshed-hook nil
+  "Hook run in a feed buffer after a refresh showed its videos.")
+
 (defun yt-feed--fetched (buffer run videos info full)
   "Show VIDEOS fetched by the refresh RUN of BUFFER.
 INFO is from `yt-auth-run'; FULL is non-nil for a full refresh."
@@ -598,6 +601,7 @@ INFO is from `yt-auth-run'; FULL is non-nil for a full refresh."
               yt-feed--status nil)
         (yt-feed--redisplay)
         (force-mode-line-update)
+        (run-hooks 'yt-feed-refreshed-hook)
         (message "yt: %s" (cond ((not new) (format "%d results" (length videos)))
                                 ((zerop new) "no new videos")
                                 (t (format "%d new video%s" new
@@ -803,6 +807,7 @@ to the channel of the video at point."
   "C" #'yt-feed-clear-filters
   "t" (cons "toggle" yt-feed-toggle-map)
   "l" #'yt-channels
+  "z" #'yt-feed-shuffle
   "+" #'yt-feed-save-playlist
   "-" #'yt-feed-forget-playlist
   "L" #'yt-login)
@@ -985,6 +990,17 @@ Interactively, use the video at point."
     (force-mode-line-update)
     (message "Removed the playlist “%s” from the saved playlists"
              (plist-get playlist :title))))
+
+(defun yt-feed-shuffle ()
+  "Play the videos shown in this buffer in random order in mpv.
+The filters apply: hidden videos are not played.  See `yt-player-shuffle'."
+  (interactive nil yt-feed-mode)
+  (yt-player-shuffle (yt-feed--filtered-videos)
+                     (pcase yt-feed--source
+                       (`(playlist ,_ ,_ ,title) title)
+                       (`(channel ,_ ,_ ,name) name)
+                       (`(search ,query) query)
+                       (_ "the subscription feed"))))
 
 (defvar yt-search-history nil
   "History of `yt-search' queries.")
