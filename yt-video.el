@@ -27,6 +27,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'subr-x)
 (require 'yt)
 
 (cl-defstruct (yt-video (:constructor yt-video--make)
@@ -110,6 +111,37 @@ timestamp is approximate, as with the extractor argument
          :thumbnail (yt-video--entry-thumbnail entry)
          :url url
          :short-p (and (string-match-p "/shorts/" url) t))))))
+
+(defconst yt-video--url-id-regexp
+  (concat "\\`https?://\\(?:\\(?:www\\.\\|m\\.\\|music\\.\\)?youtube\\.com/"
+          "\\(?:watch\\?\\(?:.*&\\)?v=\\|shorts/\\|live/\\|embed/\\)"
+          "\\|youtu\\.be/\\)"
+          "\\([A-Za-z0-9_-]\\{11\\}\\)\\(?:[?&#/]\\|\\'\\)")
+  "Regexp matching a YouTube video URL; group 1 is the video id.")
+
+(defun yt-video-from-url (url)
+  "Return a `yt-video' for the YouTube video URL, or nil if it is not one.
+A bare 11-character video id is accepted too."
+  (setq url (string-trim url))
+  (let ((id (cond ((string-match yt-video--url-id-regexp url) (match-string 1 url))
+                  ((string-match-p "\\`[A-Za-z0-9_-]\\{11\\}\\'" url) url))))
+    (when id
+      (let ((short-p (and (string-match-p "/shorts/" url) t)))
+        (yt-video--make
+         :id id :short-p short-p
+         :url (format (if short-p
+                          "https://www.youtube.com/shorts/%s"
+                        "https://www.youtube.com/watch?v=%s")
+                      id))))))
+
+(defvar-local yt-video-at-point-function nil
+  "Function returning the `yt-video' at point in this buffer, or nil.
+yt's major modes set it, so that commands such as `yt-play' work in
+all of them.")
+
+(defun yt-video-at-point ()
+  "Return the `yt-video' at point, or nil."
+  (and yt-video-at-point-function (funcall yt-video-at-point-function)))
 
 (defun yt-video--age-string (seconds)
   "Return SECONDS, a non-negative duration, in its largest whole unit."

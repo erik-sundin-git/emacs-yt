@@ -42,6 +42,7 @@
 (require 'yt-cache)
 (require 'yt-ytdlp)
 (require 'yt-auth)
+(require 'yt-player)
 
 ;;;; Faces
 
@@ -768,6 +769,9 @@ to the channel of the video at point."
 
 (defvar-keymap yt-video-actions-map
   :doc "Keys acting on the video at point, shared by yt buffers."
+  "RET" #'yt-play
+  "v" #'yt-play-vlc
+  "P" yt-player-map
   "w" #'yt-mark-video-watched
   "u" #'yt-mark-video-unwatched
   "b" #'yt-browse-video
@@ -816,6 +820,7 @@ the feed was updated, the active filters and the number of videos.
                                     :hide-shorts yt-feed-hide-shorts
                                     :hide-upcoming yt-feed-hide-upcoming))
   (setq-local revert-buffer-function #'yt-feed--revert)
+  (setq-local yt-video-at-point-function #'yt-feed-video-at-point)
   (add-hook 'kill-buffer-hook #'yt-feed--cancel nil t)
   (add-hook 'yt-watched-changed-functions #'yt-feed--watched-changed)
   (add-hook 'yt-auth-state-change-hook #'yt-feed--auth-changed)

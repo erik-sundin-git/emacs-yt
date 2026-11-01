@@ -1,0 +1,24 @@
+#!/bin/sh
+# Fake vlc for the yt tests.
+#
+# Records its arguments, one per line, in $FAKE_VLC_DIR/argv and its
+# WAYLAND_DISPLAY in $FAKE_VLC_DIR/display, then exits with the status in
+# $FAKE_VLC_DIR/exit (printing $FAKE_VLC_DIR/out first) if that file
+# exists, or sleeps until killed, like a playing VLC.
+#
+# Copyright (C) 2026 Erik Sundin
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+set -u
+dir=${FAKE_VLC_DIR:?FAKE_VLC_DIR is not set}
+: > "$dir/argv.tmp"
+for arg in "$@"; do
+    printf '%s\n' "$arg" >> "$dir/argv.tmp"
+done
+printf '%s\n' "${WAYLAND_DISPLAY:-}" > "$dir/display"
+mv "$dir/argv.tmp" "$dir/argv"
+if [ -f "$dir/exit" ]; then
+    [ -f "$dir/out" ] && cat "$dir/out"
+    exit "$(cat "$dir/exit")"
+fi
+exec sleep 1000

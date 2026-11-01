@@ -60,6 +60,42 @@
   :group 'yt
   :prefix "yt-feed-")
 
+(defgroup yt-player nil
+  "How yt plays videos."
+  :group 'yt
+  :prefix "yt-")
+
+(defcustom yt-player-backend 'auto
+  "The player used by \\[yt-play].
+`auto' means mpv when it is installed (and yt's mpv backend is
+available), otherwise VLC."
+  :type '(choice (const :tag "mpv if installed, else VLC" auto)
+                 (const :tag "mpv" mpv)
+                 (const :tag "VLC" vlc)
+                 (symbol :tag "Other backend"))
+  :group 'yt-player
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-player-format "bv*[height<=1080]+ba/b"
+  "The yt-dlp format selector for the streams to play.
+See \"FORMAT SELECTION\" in yt-dlp's documentation.  If the format
+is not available, yt retries once with \"b\"."
+  :type 'string
+  :group 'yt-player
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-vlc-program "vlc"
+  "Name or file name of the VLC program."
+  :type 'string
+  :group 'yt-player
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-vlc-extra-args nil
+  "Extra arguments passed to VLC before the stream URLs."
+  :type '(repeat string)
+  :group 'yt-player
+  :package-version '(yt . "0.1.0"))
+
 (defcustom yt-ytdlp-program "yt-dlp"
   "Name or file name of the yt-dlp program."
   :type 'string
@@ -273,14 +309,26 @@ The first time, this signs in with \\[yt-login]."
   (yt-feed-subscriptions))
 
 (declare-function yt-feed-subscriptions "yt-feed" ())
+(declare-function yt-play-url "yt-player" (url))
+(declare-function yt-player-stop "yt-player" ())
+(declare-function yt-player-show-log "yt-player" ())
 (declare-function yt-login "yt-auth" (&optional choose))
 (declare-function yt-doctor "yt-doctor" ())
+
+;;;###autoload
+(defvar-keymap yt-player-map
+  :doc "Keymap for controlling the player.
+It is bound under \\`P' in yt buffers, and its keys are also in `yt-map'."
+  "S" #'yt-player-stop
+  "!" #'yt-player-show-log)
 
 ;;;###autoload
 (defvar-keymap yt-map
   :doc "Prefix keymap for yt commands.
 Bind it to a key of your choice, for example \\`C-c y'."
+  :parent yt-player-map
   "y" #'yt
+  "u" #'yt-play-url
   "L" #'yt-login
   "d" #'yt-doctor)
 

@@ -367,6 +367,7 @@ Feed-only keys:
 (cl-defgeneric yt-player-stop (backend))
 (cl-defgeneric yt-player-command (backend cmd &rest args)) ; default: user-error "Not supported by %s"
 ```
+- **Changed in M3:** the generics are named `yt-player-backend-check`, `-play`, `-enqueue`, `-stop` and `-command`, because `yt-player-stop` is the user command. `yt-player-backend-play` and `-enqueue` also take the resolved STREAMS plist: `yt-player.el` resolves and waits once for every backend, and the backend only starts its player. `yt-player-backend-check` signals a `user-error` (player not installed) before anything is resolved. Commands find the video at point through the buffer-local `yt-video-at-point-function` (in `yt-video.el`), which each yt major mode sets.
 - Methods use the quoted form `(eql 'mpv)`. A method that ignores `start` declares `&key ((:start _start))`.
 - `auto` resolves to `mpv` if `(executable-find yt-mpv-program)` succeeds, otherwise to `vlc`.
 - If mpv is requested but missing, the error says: "mpv not found — enable the yt flake's home-manager module (or `nix profile install ~/dev/emacs-yt#runtime`), or use `v` for VLC."
@@ -380,10 +381,11 @@ Feed-only keys:
 
 ### 7.1a Stream resolver (shared by mpv and VLC; changed by the M0 spike)
 mpv's ytdl_hook **cannot play YouTube**. yt-dlp now gives each format an `available_at` time 3–5 s in the future, a fetch before that time gets HTTP 403, and ytdl_hook fetches immediately (docs/spike.md). Emacs therefore resolves every video itself:
-- **`yt-ytdlp-resolve VIDEO FORMAT CALLBACK`** (in `yt-ytdlp.el`) runs `<base> --no-playlist -f FORMAT -j -- URL` through `yt-process-run`, with the usual per-run cookie copy and write-back (§4.2). It calls CALLBACK with the plist `(:video URL :audio URL-or-nil :headers ALIST :available-at EPOCH :title STR :duration N)`:
+- **`yt-player-resolve VIDEO CALLBACK ON-ERROR &optional FORMAT`** (in `yt-player.el`; changed in M3, since it needs `yt-auth-run`, which sits above `yt-ytdlp`) runs `<base> --no-playlist -f FORMAT -j -- URL` through `yt-process-run`, with the usual per-run cookie copy and write-back (§4.2). It calls CALLBACK with the plist `(:video URL :audio URL-or-nil :headers ALIST :available-at EPOCH :title STR :duration N)`:
   - `requested_formats` gives the video and the audio entry; a single combined format gives only `:video`.
   - `:headers` comes from that format's `http_headers`.
   - `:available-at` is the maximum `available_at` over the formats, or nil.
+  - The parsing is the pure function `yt-ytdlp-parse-streams` in `yt-ytdlp.el`, with the argument list from `yt-ytdlp-resolve-args`.
 - **Waiting:** `yt-player--when-available PLIST FN` calls FN from a `run-at-time` timer once `(yt--now)` has passed `:available-at` plus 1 s, so Emacs never blocks.
 - **Benefits:**
   - The §4.5 classifier sees the full yt-dlp stderr for every playback. ytdl_hook used to hide it behind `--no-warnings`.
@@ -479,11 +481,12 @@ mpv --idle=yes --force-window=yes --no-terminal --ytdl=no
 
 ### 7.3 VLC backend
 1. Resolve with `yt-ytdlp-resolve` (§7.1a). Not `--print urls`: it doesn't give `available_at`, and VLC would get 403.
-2. Once `available_at` has passed, launch `vlc --no-video-title-show --play-and-exit --meta-title=TITLE --http-user-agent=UA V [--input-slave=A]`. All the flags were checked against the installed vlc. The WAYLAND_DISPLAY handling is the same as for mpv.
+2. Once `available_at` has passed, launch `vlc --no-video-title-show --play-and-exit --meta-title=TITLE --http-user-agent=UA [--start-time=S] [--input-slave=A] V`. A running VLC is closed first. Verified live in M3 with dummy outputs: both the AV1 video and the Opus audio stream got `206 Partial Content` and decoded. All the flags were checked against the installed vlc. The WAYLAND_DISPLAY handling is the same as for mpv.
 
 Notes:
 - **Signed URLs:** the URLs are signed, tied to the IP address, and expire after about 6 h, so they are resolved right before launch and never cached.
 - **A/V sync:** if A/V sync is bad, fall back to format `b`.
+- **Logs:** VLC prints stream locations with and without `https://`, so the player log (`yt-player-show-log`) and `*yt-log*` replace anything on `googlevideo.com` with `<stream URL>`.
 - **Fire-and-forget:**
   - `stop` kills the process.
   - `enqueue` and the other commands report "not supported".
@@ -647,7 +650,7 @@ After each milestone: report what changed, what was tested, and what is still op
 | **M0** | `git init`, skeleton with license headers in every file (GPL-3.0-or-later, SPDX), Makefile with the isolation guard, flake (`emacs-test`, devShell, `apps.test`, `apps.sandbox`, `checks`, `yt-export-cookies`, `runtime`), stub `yt`, README skeleton, CHANGELOG. **Manual spike in the sandbox:** create the dedicated Chromium profile, run the exporter, run `:ytsubs` by hand, confirm the named `loadfile` + options form against mpv 0.41, confirm `--print urls` + vlc. | `nix flake check` passes. `nix run .#sandbox` opens a separate Emacs. `make` refuses to run with the host Emacs. Spike findings are recorded in `docs/spike.md`. | Isolation-guard test, fixture leak guard |
 | **M1** | yt-process, yt-video, yt-ytdlp, yt-auth, a basic yt-doctor: `yt-login` (profile selection, exporter, verification), per-run cookies with write-back, the classifier, `yt-debug-fetch-feed` | In the sandbox: `yt-login` then `yt-debug-fetch-feed` lists real items. With the profile logged out, the expired message appears. | Process, NDJSON, and stop tests; the classifier table; auth (filter, modes, generation, join); argv assertions |
 | **M2** (done) | yt-cache and yt-feed: `M-x yt` is the home view (cache first, then refresh), with header line, `g`/`G`, filters, `w`/`u`, `b`/`y`/`Y`, and automatic login on first run | After a sandbox restart the cached feed shows immediately. Point stays on the same video id after refresh. `(yt)` returns in under 200 ms under hang mode. | Render, sort, point, filters, cache round-trip and reopen, watched-hook redraw |
-| **M3** | yt-player and yt-vlc: `RET`/`v` plays through VLC, marked watched at start, with format fallback. **All three requirements are now covered** (playback via VLC). | `v` on a sandbox feed row plays with separate audio and video streams. | argv, resolver `-j` parsing (combined vs separate formats, `available_at`, headers), wait-timer, format-retry scenario |
+| **M3** (done) | yt-player and yt-vlc: `RET`/`v` plays through VLC, marked watched at start, with format fallback. **All three requirements are now covered** (playback via VLC). | `v` on a sandbox feed row plays with separate audio and video streams. | argv, resolver `-j` parsing (combined vs separate formats, `available_at`, headers), wait-timer, format-retry scenario |
 | **M4** | yt-mpv: spawn with WAYLAND_DISPLAY, IPC, play/enqueue/pause/seek/speed/next/stop/quit, `yt-player-mode`, watched near the end, resume, cleanup on exit, the `auto` backend default, transient repeat, `homeModules.default` (mpv for the host) | In the sandbox, `RET` plays in mpv. `C-c y SPC` pauses. Closing mpv leaves no socket behind and marks the video watched past 90%. | The full fake-socket suite (above) |
 | **M5** | Channels view, channel uploads (`o`, `l`), info buffer (`i`, second-pass queue), search (`C-c y s`), playlist buffer | `l` → `RET` shows uploads. `i` shows the description and chapters, and a chapter plays from its timestamp. | Parsers, rendering, the queue limit |
 | **M6** | yt-select, marginalia, embark, `overlays.default`, `packages.default` (trivialBuild), `installElisp` | `embark-act` on a candidate plays it, in the sandbox with embark loaded. `nix build` succeeds. | Candidate and annotation tests |

@@ -77,6 +77,50 @@ The output is one JSON object per line."
 cheap check that the cookies work."
   (list "--flat-playlist" "-I" "1:3" "-J" "--" ":ytsubs"))
 
+(defun yt-ytdlp-resolve-args (format url)
+  "Return arguments that print the streams of URL in FORMAT as JSON.
+The output is one JSON object; see `yt-ytdlp-parse-streams'."
+  (list "--no-playlist" "-f" format "-j" "--" url))
+
+(defun yt-ytdlp--headers (headers)
+  "Return the http_headers plist HEADERS as an alist of strings."
+  (let (alist)
+    (while headers
+      (let ((name (substring (symbol-name (pop headers)) 1))
+            (value (pop headers)))
+        (when (stringp value)
+          (push (cons name value) alist))))
+    (nreverse alist)))
+
+(defun yt-ytdlp-parse-streams (info)
+  "Return the streams to play from INFO, the yt-dlp JSON of one video.
+The result is a plist (:video URL :audio URL :headers ALIST
+:available-at TIME :title STRING :duration SECONDS).  :audio is nil
+for a format that has both audio and video.  :available-at is the
+latest time any of the streams may be fetched, as yt-dlp reports it,
+or nil.  Return nil if INFO names no stream."
+  (let* ((formats (plist-get info :requested_formats))
+         (video (or (seq-find (lambda (f) (not (equal (plist-get f :vcodec) "none")))
+                              formats)
+                    (car formats)))
+         (audio (and formats
+                     (seq-find (lambda (f) (and (not (eq f video))
+                                                (equal (plist-get f :vcodec) "none")))
+                               formats)))
+         (main (or video info))
+         (times (delq nil (mapcar (lambda (f)
+                                    (and (numberp (plist-get f :available_at))
+                                         (plist-get f :available_at)))
+                                  (cons info formats)))))
+    (when (stringp (plist-get main :url))
+      (list :video (plist-get main :url)
+            :audio (and audio (plist-get audio :url))
+            :headers (yt-ytdlp--headers (or (plist-get main :http_headers)
+                                            (plist-get info :http_headers)))
+            :available-at (and times (apply #'max times))
+            :title (plist-get info :title)
+            :duration (plist-get info :duration)))))
+
 ;;;; Error classification
 
 (defconst yt-ytdlp-error-patterns

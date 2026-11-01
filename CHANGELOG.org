@@ -1,6 +1,20 @@
 #+title: yt changelog
 
 * Unreleased
+** M3: playback in VLC
+- =yt-player.el=: the player backend interface, =yt-play= (=RET=),
+  =yt-play-vlc= (=v=), =yt-play-url= (=C-c y u=), =yt-player-stop= (=S=) and
+  =yt-player-show-log= (=!=).  Streams are resolved with yt-dlp and the
+  signed-in cookies, retried once with format =b= when the format is not
+  available, and handed to the player only after YouTube's =available_at=
+  time, so that fetching them does not fail with 403.
+- =yt-vlc.el=: plays the separate video and audio streams in VLC, on the
+  display of the selected frame; a new video replaces the running VLC.
+  Videos count as watched when VLC starts.
+- Stream URLs are redacted from every log.
+- =yt-player-backend= (=auto= picks VLC until the mpv backend exists),
+  =yt-player-format=, =yt-vlc-program= and =yt-vlc-extra-args=.
+- 15 new tests (103 in total), with a fake VLC.
 ** M2: cache and subscription feed
 - =yt-cache.el=: SQLite cache (mode 0600, WAL, busy timeout, schema
   version) of allowlisted video fields, the order of each feed, watched
