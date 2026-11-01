@@ -21,7 +21,13 @@
   "The doctor buffer describes the cookie file without its values."
   (yt-test-with-scenario (ytdlp _)
     (yt-test-install-cookies)
-    (yt-test-step ytdlp 1 :out "2026.10.21\n")
+    (yt-test-step ytdlp 1 :exit 2
+                  :err (concat "[debug] Command-line config: ['--ignore-config', '-v']\n"
+                               "[debug] yt-dlp version stable@2026.10.21 from yt-dlp/yt-dlp [8cdf4fea4]\n"
+                               "[debug] JS runtimes: deno-2.8.3\n"
+                               "Usage: yt-dlp [OPTIONS] URL [URL...]\n"))
+    (yt-cache-put-videos (list (yt-video--make :id "aaaaaaaaaaa")))
+    (yt-mark-watched "aaaaaaaaaaa")
     (save-window-excursion
       (yt-doctor)
       (with-current-buffer "*yt-doctor*"
@@ -32,6 +38,12 @@
           (should (string-match-p "  cookies +3" text))
           (should (string-match-p "  domains +\\.youtube\\.com" text))
           (should (string-match-p "  version +2026\\.10\\.21" text))
+          (should (string-match-p "  JS runtimes +deno-2\\.8\\.3" text))
+          (should (string-match-p "^Player +auto: " text))
+          (should (string-match-p "^Cache +.*yt\\.sqlite" text))
+          (should (string-match-p "  videos +1, 1 watched, 0 in the subscription feed" text))
+          (should (string-match-p "^Thumbnails +.*(none cached, off" text))
+          (should (string-match-p "^Programs\n" text))
           (should-not (string-match-p "FAKE-\\|LOGIN_INFO\\|SAPISID" text))))
       (kill-buffer "*yt-doctor*"))))
 

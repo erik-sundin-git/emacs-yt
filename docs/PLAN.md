@@ -1,6 +1,6 @@
 # yt: YouTube subscriptions in Emacs (implementation plan)
 
-> Status: final plan, written 2026-10-31. Five planning agents wrote it and ten judge agents reviewed it. Appendix A lists every review finding and what was done with it.
+> Status: implemented; all milestones M0–M7 are done (2026-11-01). Sections marked "Changed in Mn" record where the code differs from the original plan. Written 2026-10-31. Five planning agents wrote it and ten judge agents reviewed it. Appendix A lists every review finding and what was done with it.
 
 ## 0. Goals, decisions, environment
 
@@ -364,6 +364,8 @@ Feed-only keys:
 - **embark:** `yt-embark-video-map` has `yt-video-actions-map` and `embark-general-map` as parents. It is registered in `embark-keymap-alist`, and a target finder makes embark work in feed buffers.
 - All of this is guarded with `with-eval-after-load`, and `defvar`s keep the byte-compiler quiet.
 
+**Changed in M7:** the download queue lives in `yt-thumbs.el` (`yt-thumbs-fetch`, `yt-thumbs-changed-functions`); the feed adds a first column when thumbnails are shown and redraws one row per arrival. A cancelled download may be requested again; a failed one is not retried in the session. `yt-doctor` reads yt-dlp's version and JS runtimes from its debug header by running `yt-dlp --ignore-config -v` with no URL (`-v --version` prints no header); that run has no cookies and no network access. Live: `(yt)` with thumbnails on returned in 77 ms, and 20 thumbnails arrived in 0.5 s.
+
 **Thumbnails** (`yt-feed-thumbnails`, nil by default, and only when `display-images-p`):
 - Source: `https://i.ytimg.com/vi/ID/mqdefault.jpg`, cached under `(expand-file-name "yt/thumbs" (xdg-cache-home))`.
 - Fetched with `curl -sf -o FILE.part` and then renamed. Fetches run in a queue of 4 and are deduplicated by id. There is **no url-retrieve fallback**, because that would send url.el's cookies and user agent.
@@ -674,7 +676,7 @@ After each milestone: report what changed, what was tested, and what is still op
 | **M4** (done) | yt-mpv: spawn with WAYLAND_DISPLAY, IPC, play/enqueue/pause/seek/speed/next/stop/quit, `yt-player-mode`, watched near the end, resume, cleanup on exit, the `auto` backend default, transient repeat, `homeModules.default` (mpv for the host) | In the sandbox, `RET` plays in mpv. `C-c y SPC` pauses. Closing mpv leaves no socket behind and marks the video watched past 90%. | The full fake-socket suite (above) |
 | **M5** (done) | Channels view, channel uploads (`o`, `l`), info buffer (`i`, second-pass queue), search (`C-c y s`), playlist buffer | `l` → `RET` shows uploads. `i` shows the description and chapters, and a chapter plays from its timestamp. | Parsers, rendering, the queue limit |
 | **M6** (done) | yt-select, marginalia, embark, `overlays.default`, `packages.default` (trivialBuild), `installElisp` | `embark-act` on a candidate plays it, in the sandbox with embark loaded. `nix build` succeeds. | Candidate and annotation tests |
-| **M7** | Thumbnails, face polish, the full `yt-doctor` (yt-dlp version and JS runtime, mpv/vlc, WAYLAND_DISPLAY and DBUS_SESSION_BUS_ADDRESS, profile, auth state, cookie file **modes and counts only**, cache path), README (install, profile setup, keys, sway snippet, privacy, known limitations), the host `use-package` snippet | Thumbnails load without blocking, measured the same way as in M2. `make all` passes. | Thumbnail queue, dedup, and `.part` rename |
+| **M7** (done) | Thumbnails, face polish, the full `yt-doctor` (yt-dlp version and JS runtime, mpv/vlc, WAYLAND_DISPLAY and DBUS_SESSION_BUS_ADDRESS, profile, auth state, cookie file **modes and counts only**, cache path), README (install, profile setup, keys, sway snippet, privacy, known limitations), the host `use-package` snippet | Thumbnails load without blocking, measured the same way as in M2. `make all` passes. | Thumbnail queue, dedup, and `.part` rename |
 
 ## 13. Privacy notes (README)
 - **Network contacts:**

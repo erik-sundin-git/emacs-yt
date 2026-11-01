@@ -43,6 +43,7 @@
 (require 'yt-ytdlp)
 (require 'yt-auth)
 (require 'yt-player)
+(require 'yt-thumbs)
 
 (declare-function yt-info "yt-info" (video))
 (declare-function yt-channels "yt-channels" ())
@@ -285,12 +286,34 @@ FILTER."
            (propertize "[S] " 'face 'yt-feed-short)
          ""))))
 
+(defvar-local yt-feed--thumbnails nil
+  "Non-nil if this buffer shows thumbnails; see `yt-feed-thumbnails'.")
+
+(defvar-local yt-feed--thumbnail-timer nil
+  "Timer that requests the thumbnails of the visible rows.")
+
+(defun yt-feed--images-p ()
+  "Return non-nil if the selected frame can show images."
+  (display-images-p))
+
+(defun yt-feed--thumbnails-p ()
+  "Return non-nil if thumbnails are on in this buffer and can be shown."
+  (and yt-feed--thumbnails (yt-feed--images-p)))
+
+(defun yt-feed--thumbnail-cell (video)
+  "Return the thumbnail cell of VIDEO: its image, or a blank."
+  (if-let* ((image (yt-thumbs-image (yt-video-id video))))
+      (propertize " " 'display image)
+    ""))
+
 (defun yt-feed--entry (video now)
   "Return the tabulated-list entry of VIDEO, with ages relative to NOW."
   (let ((watched (yt-video-watched video))
         (live (yt-video-live-status video)))
     (list (yt-video-id video)
-          (vector
+          (vconcat
+           (and (yt-feed--thumbnails-p) (list (yt-feed--thumbnail-cell video)))
+           (list
            (if watched " " (propertize "●" 'face 'yt-feed-new-marker))
            (propertize (yt-video-format-age (yt-video-timestamp video) now)
                        'face 'yt-feed-age)
@@ -304,7 +327,7 @@ FILTER."
                    (propertize (or (yt-video-title video) (yt-video-id video))
                                'face (if watched
                                          'yt-feed-title-watched
-                                       'yt-feed-title-unwatched)))))))
+                                       'yt-feed-title-unwatched))))))))
 
 (defun yt-feed--entries ()
   "Return the tabulated-list entries of the videos that pass the filter."
@@ -397,6 +420,7 @@ filtered out is replaced by its nearest neighbour."
                                                  (line-beginning-position)))))
                           (get-buffer-window-list nil nil t))))
     (tabulated-list-print)
+    (yt-feed--request-thumbnails)
     (let ((rows (yt-feed--row-positions)))
       (setq yt-feed--shown (hash-table-count rows))
       (when (zerop yt-feed--shown)
@@ -751,7 +775,8 @@ to the channel of the video at point."
   :doc "Keys toggling what the feed hides."
   "w" #'yt-feed-toggle-hide-watched
   "s" #'yt-feed-toggle-hide-shorts
-  "u" #'yt-feed-toggle-hide-upcoming)
+  "u" #'yt-feed-toggle-hide-upcoming
+  "i" #'yt-feed-toggle-thumbnails)
 
 (defvar-keymap yt-feed-mode-map
   :doc "Keymap for `yt-feed-mode'."
@@ -766,6 +791,73 @@ to the channel of the video at point."
   "l" #'yt-channels
   "L" #'yt-login)
 
+(defconst yt-feed--format
+  [(" " 1 nil)
+   ("Age" 5 yt-feed--sort-age :right-align t)
+   ("Dur" 8 yt-feed--sort-duration :right-align t)
+   ("Channel" 20 t)
+   ("Title" 60 t)]
+  "The columns of the feed without thumbnails.")
+
+(defun yt-feed--set-format ()
+  "Set the columns of this buffer, with a thumbnail column if shown."
+  (setq tabulated-list-format
+        (if (yt-feed--thumbnails-p)
+            (vconcat (list (list "" (1+ (ceiling (* yt-thumbs-height 16) (* 9 (max 1 (frame-char-width)))))
+                                 nil))
+                     yt-feed--format)
+          yt-feed--format))
+  (tabulated-list-init-header))
+
+(defun yt-feed--visible-ids ()
+  "Return the ids of the rows visible in windows, and of a few rows below."
+  (let (ids)
+    (dolist (window (get-buffer-window-list nil nil t))
+      (save-excursion
+        (goto-char (window-start window))
+        (let ((end (window-end window t))
+              (extra 10))
+          (while (and (not (eobp)) (or (< (point) end) (>= (cl-decf extra) 0)))
+            (when-let* ((id (tabulated-list-get-id)))
+              (push id ids))
+            (forward-line 1)))))
+    (delete-dups ids)))
+
+(defun yt-feed--request-thumbnails ()
+  "Download the thumbnails of the rows about to be seen."
+  (when (yt-feed--thumbnails-p)
+    (yt-thumbs-fetch (yt-feed--visible-ids))))
+
+(defun yt-feed--schedule-thumbnails (&rest _)
+  "Request thumbnails shortly, after scrolling settles."
+  (when (yt-feed--thumbnails-p)
+    (let ((buffer (current-buffer)))
+      (when (timerp yt-feed--thumbnail-timer)
+        (cancel-timer yt-feed--thumbnail-timer))
+      (setq yt-feed--thumbnail-timer
+            (run-with-idle-timer 0.2 nil
+                                 (lambda ()
+                                   (when (buffer-live-p buffer)
+                                     (with-current-buffer buffer
+                                       (yt-feed--request-thumbnails)))))))))
+
+(defun yt-feed--thumbnail-arrived (id)
+  "Show the thumbnail of ID in the feed buffers showing thumbnails."
+  (dolist (buffer (yt-feed--buffers))
+    (with-current-buffer buffer
+      (when (and (yt-feed--thumbnails-p) (gethash id yt-feed--table))
+        (yt-feed--redraw-rows (list id))))))
+
+(defun yt-feed-toggle-thumbnails ()
+  "Toggle thumbnails in this feed."
+  (interactive nil yt-feed-mode)
+  (setq yt-feed--thumbnails (not yt-feed--thumbnails))
+  (when (and yt-feed--thumbnails (not (yt-feed--images-p)))
+    (message "This frame cannot show images"))
+  (yt-feed--set-format)
+  (yt-feed--redisplay)
+  (message "%s thumbnails" (if yt-feed--thumbnails "Showing" "Hiding")))
+
 (define-derived-mode yt-feed-mode tabulated-list-mode "yt"
   "Major mode for a list of YouTube videos.
 The rows are in the order of the feed; \\[tabulated-list-sort] sorts by
@@ -775,13 +867,7 @@ the feed was updated, the active filters and the number of videos.
 \\{yt-feed-mode-map}"
   :group 'yt-feed
   :interactive nil
-  (setq tabulated-list-format
-        [(" " 1 nil)
-         ("Age" 5 yt-feed--sort-age :right-align t)
-         ("Dur" 8 yt-feed--sort-duration :right-align t)
-         ("Channel" 20 t)
-         ("Title" 60 t)]
-        tabulated-list-entries #'yt-feed--entries
+  (setq tabulated-list-entries #'yt-feed--entries
         tabulated-list-sort-key nil
         tabulated-list-use-header-line nil
         header-line-format '(:eval (yt-feed--header-line))
@@ -791,7 +877,10 @@ the feed was updated, the active filters and the number of videos.
                                     :hide-upcoming yt-feed-hide-upcoming))
   (setq-local revert-buffer-function #'yt-feed--revert)
   (setq-local yt-video-at-point-function #'yt-feed-video-at-point)
+  (setq-local yt-feed--thumbnails yt-feed-thumbnails)
   (yt-feed--set-videos nil)
+  (add-hook 'window-scroll-functions #'yt-feed--schedule-thumbnails nil t)
+  (add-hook 'yt-thumbs-changed-functions #'yt-feed--thumbnail-arrived)
   (add-hook 'kill-buffer-hook #'yt-feed--cancel nil t)
   (add-hook 'yt-watched-changed-functions #'yt-feed--watched-changed)
   (add-hook 'yt-auth-state-change-hook #'yt-feed--auth-changed)
@@ -799,7 +888,7 @@ the feed was updated, the active filters and the number of videos.
     (setq yt-feed--age-timer (run-with-timer yt-feed-age-update-interval
                                              yt-feed-age-update-interval
                                              #'yt-feed--update-ages)))
-  (tabulated-list-init-header))
+  (yt-feed--set-format))
 
 (defun yt-feed--show (source name)
   "Show the feed SOURCE in the buffer NAME, from the cache, then refreshed.

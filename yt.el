@@ -229,6 +229,20 @@ a session, and \\[universal-argument] \\[yt-feed-refresh], always fetch them all
   :group 'yt-feed
   :package-version '(yt . "0.1.0"))
 
+(defcustom yt-feed-thumbnails nil
+  "Non-nil means the feed shows thumbnails, on displays that can.
+Thumbnails are downloaded from i.ytimg.com with `yt-curl-program'
+into the \"yt/thumbs\" directory of `xdg-cache-home'."
+  :type 'boolean
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-curl-program "curl"
+  "Name or file name of the curl program, which downloads thumbnails."
+  :type 'string
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
 (defcustom yt-state-directory (expand-file-name "yt" (xdg-state-home))
   "Directory for persistent yt state, such as cookies and the cache.
 It is created with mode 0700, and yt refuses to use it if it is

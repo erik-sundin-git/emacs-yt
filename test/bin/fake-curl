@@ -1,0 +1,25 @@
+#!/bin/sh
+# Fake curl for the yt tests.
+#
+# Appends its arguments, on one line, to $FAKE_CURL_DIR/calls.  Then, if
+# $FAKE_CURL_DIR/hang exists, writes half a file to the --output file and
+# sleeps until killed; if $FAKE_CURL_DIR/fail exists, exits 22 as curl
+# --fail does; otherwise writes a fake image to the --output file.
+#
+# Copyright (C) 2026 Erik Sundin
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+set -u
+dir=${FAKE_CURL_DIR:?FAKE_CURL_DIR is not set}
+echo "$*" >> "$dir/calls"
+output= prev=
+for arg in "$@"; do
+    [ "$prev" = "--output" ] && output=$arg
+    prev=$arg
+done
+if [ -f "$dir/hang" ]; then
+    printf 'half' > "$output"
+    exec sleep 1000
+fi
+[ -f "$dir/fail" ] && exit 22
+printf 'FAKEJPEG' > "$output"

@@ -35,6 +35,8 @@
 (require 'yt-video)
 (require 'yt-ytdlp)
 (require 'yt-auth)
+(require 'yt-cache)
+(require 'yt-player)
 
 (defun yt-doctor--insert (label value &optional face)
   "Insert a line with LABEL and VALUE, VALUE shown in FACE."
@@ -89,31 +91,51 @@ Only the domain field of each cookie is read; values are ignored."
 
 ;;;###autoload
 (defun yt-doctor ()
-  "Show what yt depends on and whether it works."
+  "Show what yt depends on and whether it works.
+Cookie values are never shown, only the cookie file's mode, the
+number of cookies and their domains."
   (interactive)
   (let ((buffer (get-buffer-create "*yt-doctor*"))
-        (version (ignore-errors
-                   (car (process-lines yt-ytdlp-program "--version")))))
+        (ytdlp (yt-doctor--ytdlp-info)))
     (with-current-buffer buffer
       (let ((inhibit-read-only t))
         (erase-buffer)
+        (yt-doctor--heading "Programs")
         (yt-doctor--insert "Emacs" emacs-version)
         (yt-doctor--program "yt-dlp" yt-ytdlp-program)
-        (when version
+        (when-let* ((version (plist-get ytdlp :version)))
           (let ((problem (yt-ytdlp-version-problem version)))
             (yt-doctor--insert "  version" (or problem version)
                                (if problem 'warning 'success))))
+        (when (executable-find yt-ytdlp-program)
+          (let ((js (plist-get ytdlp :js-runtimes)))
+            (yt-doctor--insert "  JS runtimes" (or js "none reported")
+                               (if (and js (not (string-match-p "\\`none" js)))
+                                   'success 'warning))))
         (yt-doctor--program "Cookie exporter" yt-export-cookies-program)
-        (yt-doctor--program "mpv" "mpv")
-        (yt-doctor--program "VLC" "vlc")
-        (let ((wayland (getenv "WAYLAND_DISPLAY" (selected-frame))))
+        (yt-doctor--program "mpv" yt-mpv-program)
+        (when-let* ((version (yt-doctor--first-line yt-mpv-program "--version")))
+          (yt-doctor--insert "  version" (truncate-string-to-width version 40)))
+        (yt-doctor--program "VLC" yt-vlc-program)
+        (yt-doctor--program "curl (thumbnails)" yt-curl-program)
+        (yt-doctor--insert "Player" (if (eq yt-player-backend 'auto)
+                                        (format "auto: %s" (yt-player-backend))
+                                      yt-player-backend))
+        (yt-doctor--heading "Session")
+        (let ((wayland (getenv "WAYLAND_DISPLAY" (selected-frame)))
+              (x (getenv "DISPLAY" (selected-frame))))
           (yt-doctor--insert "WAYLAND_DISPLAY" (or wayland "not set")
-                             (if wayland 'success 'warning)))
+                             (if (or wayland x) 'success 'warning))
+          (yt-doctor--insert "DISPLAY" (or x "not set")))
         (let ((dbus (getenv "DBUS_SESSION_BUS_ADDRESS")))
           (yt-doctor--insert "D-Bus session" (if dbus "available" "not set")
                              (if dbus 'success 'warning)))
+        (yt-doctor--heading "Files")
         (yt-doctor--directory "State directory" #'yt-ensure-state-directory)
         (yt-doctor--directory "Runtime directory" #'yt-ensure-runtime-directory)
+        (yt-doctor--cache)
+        (yt-doctor--thumbnails)
+        (yt-doctor--heading "Sign-in")
         (let ((profile (yt-auth-profile)))
           (yt-doctor--insert "Chromium profile"
                              (if profile (yt-auth-profile-label profile)
@@ -129,6 +151,61 @@ Only the domain field of each cookie is read; values are ignored."
                              'warning)))
       (special-mode))
     (pop-to-buffer buffer)))
+
+(defun yt-doctor--heading (title)
+  "Insert the section heading TITLE."
+  (unless (bobp)
+    (insert "\n"))
+  (insert (propertize title 'face 'bold) "\n"))
+
+(defun yt-doctor--first-line (program &rest args)
+  "Return the first line PROGRAM prints when run with ARGS, or nil."
+  (when (executable-find program)
+    (ignore-errors (car (apply #'process-lines program args)))))
+
+(defun yt-doctor--ytdlp-info ()
+  "Return (:version V :js-runtimes J) from yt-dlp's debug header.
+yt-dlp prints the header when run with -v and no URL, then exits
+with a usage error.  This runs without cookies or network access."
+  (when (executable-find yt-ytdlp-program)
+    (with-temp-buffer
+      (ignore-errors
+        (call-process yt-ytdlp-program nil t nil "--ignore-config" "-v"))
+      (goto-char (point-min))
+      (let ((js (and (re-search-forward "JS runtimes: \\(.*\\)$" nil t)
+                     (string-trim (match-string 1)))))
+        (goto-char (point-min))
+        (list :version (and (re-search-forward
+                             "yt-dlp version \\(?:[a-z]+@\\)?\\([0-9]\\{4\\}\\.[0-9.]+\\)" nil t)
+                            (match-string 1))
+              :js-runtimes js)))))
+
+(defun yt-doctor--cache ()
+  "Insert lines describing the cache database."
+  (let ((file (yt-cache-file-name)))
+    (if (not (file-exists-p file))
+        (yt-doctor--insert "Cache" (format "%s (not created yet)" file))
+      (let ((modes (file-modes file))
+            (count (lambda (sql) (caar (sqlite-select (yt-cache-db) sql)))))
+        (yt-doctor--insert "Cache" file)
+        (yt-doctor--insert "  mode" (format "%o" modes) (if (= modes #o600) 'success 'error))
+        (yt-doctor--insert "  videos"
+                           (format "%d, %d watched, %d in the subscription feed"
+                                   (funcall count "SELECT count(*) FROM videos")
+                                   (funcall count "SELECT count(*) FROM videos WHERE watched <> 0")
+                                   (funcall count "SELECT count(*) FROM feed WHERE source = 'subscriptions'")))
+        (yt-doctor--insert "  channels" (funcall count "SELECT count(*) FROM channels"))))))
+
+(defun yt-doctor--thumbnails ()
+  "Insert a line describing the thumbnail cache."
+  (let ((dir (expand-file-name "yt/thumbs" (xdg-cache-home))))
+    (yt-doctor--insert "Thumbnails"
+                       (format "%s (%s, %s)" dir
+                               (if (file-directory-p dir)
+                                   (format "%d cached"
+                                           (length (directory-files dir nil "\\.jpg\\'")))
+                                 "none cached")
+                               (if yt-feed-thumbnails "on" "off; t i in the feed")))))
 
 ;;;; Debug feed
 

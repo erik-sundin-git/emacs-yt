@@ -1,6 +1,18 @@
 #+title: yt changelog
 
 * Unreleased
+** M7: thumbnails, diagnostics and documentation
+- =yt-thumbs.el=: thumbnails from i.ytimg.com, fetched with curl without
+  cookies, four at a time, once per video, through a =.part= file; the feed
+  shows them in a first column (=t i=, or =yt-feed-thumbnails=) and asks only
+  for the rows about to be seen.
+- =yt-doctor= now also reports yt-dlp's JS runtimes, the mpv version, curl,
+  the player in use, =DISPLAY=, the cache (mode, videos, watched, channels)
+  and the thumbnail cache, in sections.
+- README: installation (Home Manager module, overlay, straight.el), the
+  dedicated profile, all keys, the sway window rule, options, privacy and
+  known limitations.
+- 5 new tests (142 in total).
 ** M6: completion, embark, marginalia and Nix packaging
 - =yt-select.el=: =C-c y f= chooses a video of the feed with completion
   (category =yt-video=, annotated with channel, age and duration, optionally
