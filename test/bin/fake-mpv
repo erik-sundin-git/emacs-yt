@@ -1,0 +1,19 @@
+#!/bin/sh
+# Fake mpv for the yt tests.
+#
+# Records its arguments, one per line, in $FAKE_MPV_DIR/argv and its
+# WAYLAND_DISPLAY in $FAKE_MPV_DIR/display, then sleeps until killed.  The
+# tests serve the IPC socket themselves.
+#
+# Copyright (C) 2026 Erik Sundin
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+set -u
+dir=${FAKE_MPV_DIR:?FAKE_MPV_DIR is not set}
+: > "$dir/argv.tmp"
+for arg in "$@"; do
+    printf '%s\n' "$arg" >> "$dir/argv.tmp"
+done
+printf '%s\n' "${WAYLAND_DISPLAY:-}" > "$dir/display"
+mv "$dir/argv.tmp" "$dir/argv"
+exec sleep 1000

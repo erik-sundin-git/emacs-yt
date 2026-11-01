@@ -1,6 +1,27 @@
 #+title: yt changelog
 
 * Unreleased
+** M4: mpv controlled from Emacs
+- =yt-mpv.el=: one idle mpv, started on first use on the selected frame's
+  display and driven over JSON IPC through a socket in the private runtime
+  directory.  Pending commands wait for the connection; a closed socket is
+  reconnected (up to 3 times) and the properties observed again.
+- Playlist entries are followed by id: a video counts as watched once
+  =yt-player-watched-threshold= (0.9) of it has played or it plays to the
+  end, never after an error; otherwise its position is saved, and =RET=
+  resumes there (=C-u RET= plays from the start).  A playback error
+  resolves the video again, once, and resumes where it failed.
+- =m= plays in mpv, =a= queues (in order, also on a region); =auto= now
+  picks mpv when it is installed.
+- Player keys in =yt-map= and under =P=: =SPC= pause, arrows seek 5 s and
+  60 s, =[= / =]= speed, === normal speed, =n= / =p= next and previous,
+  =S= stop, =Q= quit; they repeat without the prefix.
+- =yt-player-mode= shows =▶ Title 12:34/45:00 ×1.25= in the mode line.
+- When mpv exits or Emacs is killed, the position is saved and the socket
+  removed.
+- =homeModules.default= (=programs.yt.enable=) installs mpv and the
+  cookie exporter.
+- 17 new tests (120 in total) against a fake mpv IPC server.
 ** M3: playback in VLC
 - =yt-player.el=: the player backend interface, =yt-play= (=RET=),
   =yt-play-vlc= (=v=), =yt-play-url= (=C-c y u=), =yt-player-stop= (=S=) and

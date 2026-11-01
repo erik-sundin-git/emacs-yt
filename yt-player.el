@@ -145,17 +145,17 @@ Stream URLs are left out."
   "Return a short name for VIDEO, for messages."
   (or (yt-video-title video) (yt-video-id video)))
 
-(defun yt-player-resolve (video callback on-error &optional format)
+(cl-defun yt-player-resolve (video callback on-error &key format (key '(yt-player . resolve)))
   "Resolve the streams of VIDEO and call CALLBACK with them.
 CALLBACK gets the streams plist of `yt-ytdlp-parse-streams' and the
 yt-dlp JSON.  ON-ERROR gets the error plist of `yt-auth-run'.  FORMAT
 defaults to `yt-player-format'; if it is not available, the streams
-are resolved once more with format \"b\".  A new call cancels a
-running one, whose ON-ERROR then gets :type `cancelled'."
+are resolved once more with format \"b\".  A new call with the same
+KEY cancels a running one, whose ON-ERROR then gets :type `cancelled'."
   (let ((format (or format yt-player-format)))
     (yt-auth-run
      (yt-ytdlp-resolve-args format (yt-video-url video))
-     :key '(yt-player . resolve) :force t :parse 'json
+     :key key :force t :parse 'json
      :on-success
      (lambda (info _info)
        (if-let* ((streams (yt-ytdlp-parse-streams info)))
@@ -165,24 +165,26 @@ running one, whose ON-ERROR then gets :type `cancelled'."
      :on-error
      (lambda (err)
        (if (and (eq (plist-get err :class) 'format) (not (equal format "b")))
-           (yt-player-resolve video callback on-error "b")
+           (yt-player-resolve video callback on-error :format "b" :key key)
          (funcall on-error err))))))
 
-(defun yt-player--when-available (streams fn)
+(defun yt-player--when-available (streams fn &optional independent)
   "Call FN from a timer once YouTube releases STREAMS.
 That is `yt-player-available-margin' seconds after their
 :available-at time, or at once if they have none.  A new call
-replaces a waiting one."
-  (when (timerp yt-player--wait-timer)
-    (cancel-timer yt-player--wait-timer))
+replaces a waiting one, unless either is INDEPENDENT."
   (let* ((at (plist-get streams :available-at))
          (delay (if at (max 0 (- (+ at yt-player-available-margin) (yt--now))) 0)))
     (when (> delay 3)
       (message "Waiting %d s for YouTube to release the stream..." (ceiling delay)))
-    (setq yt-player--wait-timer
-          (run-at-time delay nil (lambda ()
-                                   (setq yt-player--wait-timer nil)
-                                   (funcall fn))))))
+    (if independent
+        (run-at-time delay nil fn)
+      (when (timerp yt-player--wait-timer)
+        (cancel-timer yt-player--wait-timer))
+      (setq yt-player--wait-timer
+            (run-at-time delay nil (lambda ()
+                                     (setq yt-player--wait-timer nil)
+                                     (funcall fn)))))))
 
 (defun yt-player--failed (err)
   "Report the failed playback ERR, an error plist from `yt-player-resolve'."
@@ -198,23 +200,86 @@ replaces a waiting one."
                                "; \\[yt-player-show-log] shows details"
                              ""))))))
 
-(defun yt-player--start (backend video method &rest args)
-  "Resolve VIDEO and pass it to METHOD of BACKEND with ARGS.
-METHOD is `yt-player-backend-play' or `yt-player-backend-enqueue'."
+(defun yt-player--fill-video (video streams)
+  "Fill in the title and duration of VIDEO from its resolved STREAMS."
+  (unless (yt-video-title video)
+    (setf (yt-video-title video) (plist-get streams :title)))
+  (unless (yt-video-duration video)
+    (setf (yt-video-duration video) (plist-get streams :duration))))
+
+(defun yt-player--start (backend video &optional start)
+  "Resolve VIDEO and play it with BACKEND from START seconds."
   (yt-player--load backend)
   (yt-player-display-environment)
   (message "Resolving “%s”..." (yt-player--title video))
   (yt-player-resolve
    video
    (lambda (streams _info)
-     (unless (yt-video-title video)
-       (setf (yt-video-title video) (plist-get streams :title)))
+     (yt-player--fill-video video streams)
      (yt-player--when-available
       streams
       (lambda ()
         (setq yt-player--current-backend backend)
-        (apply method backend video streams args))))
+        (yt-player-backend-play backend video streams :start start))))
    #'yt-player--failed))
+
+;;;; Queueing
+
+(defvar yt-player--queue nil
+  "Videos waiting to be resolved and enqueued, as (BACKEND . VIDEO).")
+
+(defvar yt-player--queue-busy nil
+  "Non-nil while a video of `yt-player--queue' is being resolved.")
+
+(defun yt-player--queue-next ()
+  "Resolve the next video of `yt-player--queue' and enqueue it.
+Videos are resolved one at a time, so they reach the player's
+playlist in the order they were queued."
+  (setq yt-player--queue-busy nil)
+  (when-let* ((next (pop yt-player--queue)))
+    (setq yt-player--queue-busy t)
+    (let ((backend (car next))
+          (video (cdr next)))
+      (yt-player-resolve
+       video
+       (lambda (streams _info)
+         (yt-player--fill-video video streams)
+         (yt-player--when-available
+          streams
+          (lambda ()
+            (unwind-protect
+                (progn (setq yt-player--current-backend backend)
+                       (yt-player-backend-enqueue backend video streams))
+              (yt-player--queue-next)))
+          t))
+       (lambda (err)
+         (yt-player--failed err)
+         (yt-player--queue-next))
+       :key '(yt-player . enqueue)))))
+
+(defun yt-player--enqueue (backend videos)
+  "Resolve VIDEOS in order and add them to the playlist of BACKEND."
+  (yt-player--load backend)
+  (yt-player-display-environment)
+  (setq yt-player--queue
+        (append yt-player--queue (mapcar (lambda (video) (cons backend video)) videos)))
+  (message "Queueing %d video%s..." (length videos) (if (cdr videos) "s" ""))
+  (unless yt-player--queue-busy
+    (yt-player--queue-next)))
+
+;;;; Resuming
+
+(defun yt-player--resume-position (video)
+  "Return the position to resume VIDEO at, or nil to play from the start.
+A position is used only if `yt-player-resume' is non-nil and it is
+at least 30 s in and short of `yt-player-watched-threshold'."
+  (let* ((cached (and yt-player-resume (yt-video-id video)
+                      (yt-cache-get (yt-video-id video))))
+         (position (and cached (yt-video-position cached)))
+         (duration (or (yt-video-duration video) (and cached (yt-video-duration cached)))))
+    (and position (>= position 30)
+         (or (not duration) (< position (* yt-player-watched-threshold duration)))
+         position)))
 
 ;;;; Commands
 
@@ -233,18 +298,50 @@ METHOD is `yt-player-backend-play' or `yt-player-backend-enqueue'."
         (user-error "Not a YouTube video URL: %s" url))))
 
 ;;;###autoload
-(defun yt-play (video &optional backend)
+(defun yt-play (video &optional backend from-start)
   "Play VIDEO with BACKEND, which defaults to `yt-player-backend'.
-Interactively, play the video at point, or ask for a URL."
-  (interactive (list (yt-player--read-video)))
-  (yt-player--start (or backend (yt-player-backend)) video #'yt-player-backend-play))
+Resume where you stopped watching, unless FROM-START is non-nil.
+Interactively, play the video at point, or ask for a URL; a prefix
+argument plays from the start."
+  (interactive (list (yt-player--read-video) nil current-prefix-arg))
+  (let ((start (and (not from-start) (yt-player--resume-position video))))
+    (when start
+      (message "Resuming at %s; %s plays from the start"
+               (yt-video-format-duration start)
+               (substitute-command-keys "\\[universal-argument] \\[yt-play]")))
+    (yt-player--start (or backend (yt-player-backend)) video start)))
 
 ;;;###autoload
-(defun yt-play-vlc (video)
-  "Play VIDEO in VLC.
+(defun yt-play-vlc (video &optional from-start)
+  "Play VIDEO in VLC, from the start if FROM-START is non-nil.
 Interactively, play the video at point, or ask for a URL."
-  (interactive (list (yt-player--read-video)))
-  (yt-play video 'vlc))
+  (interactive (list (yt-player--read-video) current-prefix-arg))
+  (yt-play video 'vlc from-start))
+
+;;;###autoload
+(defun yt-play-mpv (video &optional from-start)
+  "Play VIDEO in mpv, from the start if FROM-START is non-nil.
+Interactively, play the video at point, or ask for a URL."
+  (interactive (list (yt-player--read-video) current-prefix-arg))
+  (yt-play video 'mpv from-start))
+
+(defun yt-player--selected-videos ()
+  "Return the videos in the region or the video at point, or ask for a URL."
+  (or (and (use-region-p) (fboundp 'yt-feed--selected-videos)
+           (derived-mode-p 'tabulated-list-mode)
+           (yt-feed--selected-videos))
+      (list (yt-player--read-video))))
+
+;;;###autoload
+(defun yt-enqueue (videos)
+  "Add VIDEOS to the player's playlist.
+Interactively, add the video at point or the videos in the region,
+or ask for a URL.  Only players with a playlist, such as mpv, can
+queue videos."
+  (interactive (list (yt-player--selected-videos)))
+  (when (use-region-p)
+    (deactivate-mark))
+  (yt-player--enqueue (yt-player-backend) videos))
 
 ;;;###autoload
 (defun yt-play-url (url)
@@ -260,11 +357,160 @@ Interactively, play the video at point, or ask for a URL."
   (let ((pending (or (yt-process-cancel '(yt-player . resolve))
                      (and (timerp yt-player--wait-timer)
                           (progn (cancel-timer yt-player--wait-timer) t)))))
-    (setq yt-player--wait-timer nil)
+    (setq yt-player--wait-timer nil
+          yt-player--queue nil)
+    (yt-process-cancel '(yt-player . enqueue))
     (cond (yt-player--current-backend
            (yt-player-backend-stop yt-player--current-backend))
           ((not pending)
            (message "Nothing is playing")))))
+
+;;;; Player commands
+
+(defun yt-player--command (command &rest args)
+  "Send COMMAND with ARGS to the player that played last."
+  (unless yt-player--current-backend
+    (user-error "Nothing is playing"))
+  (apply #'yt-player-backend-command yt-player--current-backend command args)
+  (yt-player--repeat))
+
+(defvar-keymap yt-player-repeat-map
+  :doc "Keys that repeat player commands without their prefix."
+  "SPC" #'yt-player-pause
+  "<left>" #'yt-player-seek-backward
+  "<right>" #'yt-player-seek-forward
+  "<down>" #'yt-player-seek-backward-more
+  "<up>" #'yt-player-seek-forward-more
+  "[" #'yt-player-slower
+  "]" #'yt-player-faster
+  "n" #'yt-player-next
+  "p" #'yt-player-previous)
+
+(defun yt-player--repeat ()
+  "Let the keys of `yt-player-repeat-map' repeat the last command.
+Do nothing when `repeat-mode' is on, which handles this itself."
+  (unless (bound-and-true-p repeat-mode)
+    (set-transient-map yt-player-repeat-map)))
+
+;;;###autoload
+(defun yt-player-pause ()
+  "Pause or resume playback."
+  (interactive)
+  (yt-player--command 'pause))
+
+;;;###autoload
+(defun yt-player-seek-forward (&optional seconds)
+  "Seek SECONDS forward, 5 by default."
+  (interactive "P")
+  (yt-player--command 'seek (if seconds (prefix-numeric-value seconds) 5)))
+
+;;;###autoload
+(defun yt-player-seek-backward (&optional seconds)
+  "Seek SECONDS backward, 5 by default."
+  (interactive "P")
+  (yt-player--command 'seek (- (if seconds (prefix-numeric-value seconds) 5))))
+
+;;;###autoload
+(defun yt-player-seek-forward-more ()
+  "Seek a minute forward."
+  (interactive)
+  (yt-player--command 'seek 60))
+
+;;;###autoload
+(defun yt-player-seek-backward-more ()
+  "Seek a minute backward."
+  (interactive)
+  (yt-player--command 'seek -60))
+
+;;;###autoload
+(defun yt-player-faster ()
+  "Play 10% faster."
+  (interactive)
+  (yt-player--command 'speed 1.1))
+
+;;;###autoload
+(defun yt-player-slower ()
+  "Play 10% slower."
+  (interactive)
+  (yt-player--command 'speed (/ 1 1.1)))
+
+;;;###autoload
+(defun yt-player-normal-speed ()
+  "Play at normal speed."
+  (interactive)
+  (yt-player--command 'speed nil))
+
+;;;###autoload
+(defun yt-player-next ()
+  "Play the next video of the playlist."
+  (interactive)
+  (yt-player--command 'next))
+
+;;;###autoload
+(defun yt-player-previous ()
+  "Play the previous video of the playlist."
+  (interactive)
+  (yt-player--command 'previous))
+
+;;;###autoload
+(defun yt-player-quit ()
+  "Close the player, keeping your position in the video."
+  (interactive)
+  (unless yt-player--current-backend
+    (user-error "Nothing is playing"))
+  (yt-player-backend-command yt-player--current-backend 'quit))
+
+(dolist (command '(yt-player-pause yt-player-seek-forward yt-player-seek-backward
+                   yt-player-seek-forward-more yt-player-seek-backward-more
+                   yt-player-faster yt-player-slower yt-player-next yt-player-previous))
+  (put command 'repeat-map 'yt-player-repeat-map))
+
+;;;; Mode line
+
+(defvar yt-player--mode-line ""
+  "The now-playing text shown by `yt-player-mode'.")
+(put 'yt-player--mode-line 'risky-local-variable t)
+
+(defun yt-player--segment-string (state)
+  "Return the now-playing text for the player STATE, a plist.
+STATE has :title, :time-pos, :duration, :pause, :speed and :idle.
+Return \"\" while the player is idle or has no title."
+  (let ((title (plist-get state :title))
+        (pos (plist-get state :time-pos))
+        (duration (plist-get state :duration))
+        (speed (plist-get state :speed)))
+    (if (or (plist-get state :idle) (not title))
+        ""
+      (concat (if (plist-get state :pause) "⏸ " "▶ ")
+              (truncate-string-to-width title 20 nil nil "…")
+              (if pos
+                  (concat " " (yt-video-format-duration pos)
+                          (if duration (concat "/" (yt-video-format-duration duration)) ""))
+                "")
+              (if (and speed (> (abs (- speed 1.0)) 0.005))
+                  (format " ×%.2f" speed)
+                "")
+              " "))))
+
+(defun yt-player-update-mode-line (state)
+  "Show the player STATE, a plist, in the mode line.
+See `yt-player--segment-string' for STATE.  The mode lines are
+redrawn only when the text changes."
+  (let ((text (yt-player--segment-string state)))
+    (unless (equal text yt-player--mode-line)
+      (setq yt-player--mode-line text)
+      (force-mode-line-update t))))
+
+;;;###autoload
+(define-minor-mode yt-player-mode
+  "Show the video that is playing in the mode line.
+It is turned on when mpv starts playing."
+  :global t
+  :group 'yt-player
+  (setq global-mode-string (delq 'yt-player--mode-line (ensure-list global-mode-string)))
+  (when yt-player-mode
+    (setq global-mode-string (append global-mode-string '(yt-player--mode-line))))
+  (force-mode-line-update t))
 
 (provide 'yt-player)
 ;;; yt-player.el ends here

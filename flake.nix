@@ -173,5 +173,30 @@
           inherit (p) yt-export-cookies;
         }
       );
+
+      # Home Manager module that installs what yt needs on a host: mpv and
+      # the cookie exporter (yt-dlp and VLC are expected from elsewhere).
+      # Enable it with `programs.yt.enable = true;'.
+      homeModules.default =
+        {
+          config,
+          lib,
+          pkgs,
+          ...
+        }:
+        {
+          options.programs.yt = {
+            enable = lib.mkEnableOption "the programs yt runs: mpv and yt-export-cookies";
+            package = lib.mkOption {
+              type = lib.types.package;
+              default = self.packages.${pkgs.stdenv.hostPlatform.system}.runtime;
+              defaultText = lib.literalExpression "emacs-yt.packages.\${system}.runtime";
+              description = "The package providing mpv and yt-export-cookies.";
+            };
+          };
+          config = lib.mkIf config.programs.yt.enable {
+            home.packages = [ config.programs.yt.package ];
+          };
+        };
     };
 }

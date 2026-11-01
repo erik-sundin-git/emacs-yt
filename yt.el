@@ -84,6 +84,42 @@ is not available, yt retries once with \"b\"."
   :group 'yt-player
   :package-version '(yt . "0.1.0"))
 
+(defcustom yt-mpv-program "mpv"
+  "Name or file name of the mpv program."
+  :type 'string
+  :group 'yt-player
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-mpv-extra-args '("--hwdec=auto-safe")
+  "Extra arguments passed to mpv when it starts.
+Add \"--keep-open=yes\" to keep the last frame on screen when the
+playlist ends."
+  :type '(repeat string)
+  :group 'yt-player
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-mark-watched-when 'near-end
+  "When mpv marks a video as watched.
+`near-end' means once you have played `yt-player-watched-threshold'
+of it, or it played to the end; `start' means when it starts.  VLC
+always marks videos when they start, since yt cannot follow it."
+  :type '(choice (const :tag "Near the end" near-end)
+                 (const :tag "When it starts" start))
+  :group 'yt-player
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-player-watched-threshold 0.9
+  "Fraction of a video that counts as having watched it."
+  :type 'float
+  :group 'yt-player
+  :package-version '(yt . "0.1.0"))
+
+(defcustom yt-player-resume t
+  "Non-nil means videos resume where you stopped watching them."
+  :type 'boolean
+  :group 'yt-player
+  :package-version '(yt . "0.1.0"))
+
 (defcustom yt-vlc-program "vlc"
   "Name or file name of the VLC program."
   :type 'string
@@ -311,6 +347,17 @@ The first time, this signs in with \\[yt-login]."
 (declare-function yt-feed-subscriptions "yt-feed" ())
 (declare-function yt-play-url "yt-player" (url))
 (declare-function yt-player-stop "yt-player" ())
+(declare-function yt-player-quit "yt-player" ())
+(declare-function yt-player-pause "yt-player" ())
+(declare-function yt-player-seek-forward "yt-player" (&optional seconds))
+(declare-function yt-player-seek-backward "yt-player" (&optional seconds))
+(declare-function yt-player-seek-forward-more "yt-player" ())
+(declare-function yt-player-seek-backward-more "yt-player" ())
+(declare-function yt-player-faster "yt-player" ())
+(declare-function yt-player-slower "yt-player" ())
+(declare-function yt-player-normal-speed "yt-player" ())
+(declare-function yt-player-next "yt-player" ())
+(declare-function yt-player-previous "yt-player" ())
 (declare-function yt-player-show-log "yt-player" ())
 (declare-function yt-login "yt-auth" (&optional choose))
 (declare-function yt-doctor "yt-doctor" ())
@@ -319,7 +366,18 @@ The first time, this signs in with \\[yt-login]."
 (defvar-keymap yt-player-map
   :doc "Keymap for controlling the player.
 It is bound under \\`P' in yt buffers, and its keys are also in `yt-map'."
+  "SPC" #'yt-player-pause
+  "<left>" #'yt-player-seek-backward
+  "<right>" #'yt-player-seek-forward
+  "<down>" #'yt-player-seek-backward-more
+  "<up>" #'yt-player-seek-forward-more
+  "[" #'yt-player-slower
+  "]" #'yt-player-faster
+  "=" #'yt-player-normal-speed
+  "n" #'yt-player-next
+  "p" #'yt-player-previous
   "S" #'yt-player-stop
+  "Q" #'yt-player-quit
   "!" #'yt-player-show-log)
 
 ;;;###autoload

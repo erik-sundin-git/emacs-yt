@@ -771,6 +771,8 @@ to the channel of the video at point."
   :doc "Keys acting on the video at point, shared by yt buffers."
   "RET" #'yt-play
   "v" #'yt-play-vlc
+  "m" #'yt-play-mpv
+  "a" #'yt-enqueue
   "P" yt-player-map
   "w" #'yt-mark-video-watched
   "u" #'yt-mark-video-unwatched
