@@ -83,6 +83,16 @@ one JSON object per line."
         "--extractor-args" "youtubetab:approximate_date"
         "-j" "--" (concat (string-remove-suffix "/" url) "/videos")))
 
+(defun yt-ytdlp-channel-playlists-args (url)
+  "Return arguments that list the playlists of the channel URL as one JSON."
+  (list "--flat-playlist" "-J" "--" (concat (string-remove-suffix "/" url) "/playlists")))
+
+(defun yt-ytdlp-playlist-args (url limit)
+  "Return arguments that stream the first LIMIT videos of the playlist URL.
+The output is one JSON object per line."
+  (list "--flat-playlist" "--lazy-playlist" "-I" (format "1:%d" limit)
+        "--extractor-args" "youtubetab:approximate_date" "-j" "--" url))
+
 (defun yt-ytdlp-search-args (query limit)
   "Return arguments that stream LIMIT search results for QUERY.
 The output is one JSON object per line."

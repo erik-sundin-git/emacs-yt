@@ -2,6 +2,11 @@
 
 * Unreleased
 ** After M7
+- Channel playlists: =O= on a video (or in the channels list) lists the
+  playlists its channel made; =RET= shows a playlist's videos in playlist
+  order, refetched whole.  =+= saves a playlist in yt and =-= forgets it;
+  =C-c y P= lists the saved playlists with their unwatched counts.  The
+  cache schema is now version 3, with a playlists table.
 - =C-c y RET= opens the subscription feed too, every key of =yt-map= has a
   label for which-key ("subscriptions", "channels", …), and
   =yt-subscriptions= is another name for =yt=, so the main view is easy to

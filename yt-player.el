@@ -591,6 +591,7 @@ Without a region, move to the next row."
 
 (declare-function yt-info "yt-info" (video))
 (declare-function yt-feed-open-channel "yt-feed" (video))
+(declare-function yt-channel-playlists "yt-playlists" (id url name))
 
 (defvar-keymap yt-video-actions-map
   :doc "Keys acting on the video at point, shared by yt buffers."
@@ -600,6 +601,7 @@ Without a region, move to the next row."
   "a" #'yt-enqueue
   "i" #'yt-info
   "o" #'yt-feed-open-channel
+  "O" #'yt-channel-playlists
   "P" yt-player-map
   "w" #'yt-mark-video-watched
   "u" #'yt-mark-video-unwatched

@@ -42,6 +42,7 @@
 (require 'yt-player)
 (require 'yt-feed)
 (require 'yt-info)
+(require 'yt-playlists)
 
 (defcustom yt-select-group-by-channel nil
   "Non-nil means `yt-select-video' groups the videos by channel."

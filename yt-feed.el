@@ -47,6 +47,7 @@
 
 (declare-function yt-info "yt-info" (video))
 (declare-function yt-channels "yt-channels" ())
+(declare-function yt-saved-playlists "yt-playlists" ())
 
 ;;;; Faces
 
@@ -108,8 +109,11 @@
 (defvar-local yt-feed--source nil
   "The feed this buffer shows.
 It is `subscriptions' for the subscription feed, (channel ID URL
-NAME) for a channel's uploads, and (search QUERY) for search
-results.")
+NAME) for a channel's uploads, (playlist ID URL TITLE) for a
+playlist, and (search QUERY) for search results.")
+
+(defvar yt-playlist-limit 300
+  "Number of videos fetched from a playlist.")
 
 (defvar yt-search-limit 20
   "Number of results of a search.")
@@ -158,20 +162,24 @@ results.")
 The order of search results is not kept."
   (pcase yt-feed--source
     ('subscriptions "subscriptions")
-    (`(channel ,id . ,_) (concat "channel:" id))))
+    (`(channel ,id . ,_) (concat "channel:" id))
+    (`(playlist ,id . ,_) (concat "playlist:" id))))
 
 (defun yt-feed--fetch-spec ()
   "Return how to fetch this buffer's feed, a plist.
 :args are the yt-dlp arguments, :auth-source the SOURCE for
 `yt-auth-run', :redact the arguments to keep out of logs, :approx
 whether timestamps are approximate and :stop-early whether a
-refresh may stop at cached videos."
+refresh may stop at cached videos.  :replace means a fetch replaces
+the cached feed instead of being merged into it."
   (pcase yt-feed--source
     ('subscriptions
      (list :args (yt-ytdlp-feed-args yt-feed-limit) :auth-source 'feed
            :approx t :stop-early t))
     (`(channel ,_id ,url . ,_)
      (list :args (yt-ytdlp-channel-args url yt-feed-limit) :approx t :stop-early t))
+    (`(playlist ,_id ,url . ,_)
+     (list :args (yt-ytdlp-playlist-args url yt-playlist-limit) :approx t :replace t))
     (`(search ,query)
      (let ((args (yt-ytdlp-search-args query yt-search-limit)))
        (list :args args :redact (last args))))))
@@ -507,6 +515,10 @@ Stop the timer when no feed buffer is left."
                             'face 'warning 'mouse-face 'header-line-highlight
                             'keymap yt-feed--sign-in-map
                             'help-echo "mouse-1: sign in to YouTube"))
+           (when-let* ((id (yt-feed--playlist-id)))
+             (if (yt-cache-playlist-saved-p id)
+                 (propertize "saved playlist" 'face 'success)
+               (substitute-command-keys "\\<yt-feed-mode-map>\\[yt-feed-save-playlist] saves this playlist")))
            (cond (yt-feed--status (propertize yt-feed--status 'face 'shadow))
                  (yt-feed--error (propertize yt-feed--error 'face 'warning)))
            (if yt-feed--refreshed-at
@@ -570,7 +582,9 @@ INFO is from `yt-auth-run'; FULL is non-nil for a full refresh."
                                (not (gethash (yt-video-id video) yt-feed--table)))
                              videos)))
         (if source
-            (progn (yt-feed--set-videos (yt-cache-put-feed source videos))
+            (progn (yt-feed--set-videos
+                    (yt-cache-put-feed source videos
+                                       (plist-get (yt-feed--fetch-spec) :replace)))
                    (yt-cache-set-meta (concat "refreshed:" source) now))
           (let ((index -1))
             (dolist (video (setq videos (yt-cache-put-videos videos)))
@@ -789,6 +803,8 @@ to the channel of the video at point."
   "C" #'yt-feed-clear-filters
   "t" (cons "toggle" yt-feed-toggle-map)
   "l" #'yt-channels
+  "+" #'yt-feed-save-playlist
+  "-" #'yt-feed-forget-playlist
   "L" #'yt-login)
 
 (defconst yt-feed--format
@@ -932,6 +948,43 @@ Interactively, use the video at point."
     (yt-feed-channel (or id url)
                      (if id (format "https://www.youtube.com/channel/%s" id) url)
                      (or (yt-video-channel video) id))))
+
+(defun yt-feed-playlist (id url title)
+  "Show the videos of the playlist TITLE with ID and URL, in its order."
+  (yt-feed--show (list 'playlist id url title) (format "*yt: Playlist: %s*" title)))
+
+(defun yt-feed--playlist-id ()
+  "Return the id of this buffer's playlist, or nil."
+  (pcase yt-feed--source
+    (`(playlist ,id . ,_) id)))
+
+(defun yt-feed--playlist ()
+  "Return this buffer's playlist as a plist, or signal a `user-error'."
+  (pcase yt-feed--source
+    (`(playlist ,id ,url ,title)
+     (let ((first (car yt-feed--videos)))
+       (list :id id :url url :title title
+             ;; A channel's own playlist: its videos name the channel.
+             :channel (and first (yt-video-channel first))
+             :channel-id (and first (yt-video-channel-id first)))))
+    (_ (user-error "This is not a playlist"))))
+
+(defun yt-feed-save-playlist ()
+  "Save this playlist; \\[yt-saved-playlists] lists the saved ones."
+  (interactive nil yt-feed-mode)
+  (let ((playlist (yt-feed--playlist)))
+    (yt-cache-save-playlist playlist)
+    (force-mode-line-update)
+    (message "Saved the playlist “%s”" (plist-get playlist :title))))
+
+(defun yt-feed-forget-playlist ()
+  "Remove this playlist from the saved playlists."
+  (interactive nil yt-feed-mode)
+  (let ((playlist (yt-feed--playlist)))
+    (yt-cache-forget-playlist (plist-get playlist :id))
+    (force-mode-line-update)
+    (message "Removed the playlist “%s” from the saved playlists"
+             (plist-get playlist :title))))
 
 (defvar yt-search-history nil
   "History of `yt-search' queries.")

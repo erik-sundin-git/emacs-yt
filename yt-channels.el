@@ -37,6 +37,8 @@
 (require 'yt-auth)
 (require 'yt-feed)
 
+(declare-function yt-channel-playlists "yt-playlists" (id url name))
+
 (defconst yt-channels-buffer "*yt: Channels*"
   "Name of the channels buffer.")
 
@@ -215,6 +217,7 @@ An empty QUERY shows all channels."
   :parent tabulated-list-mode-map
   "RET" #'yt-channels-open
   "o" #'yt-channels-open
+  "O" #'yt-channel-playlists
   "b" #'yt-channels-browse
   "/" #'yt-channels-filter
   "s" #'yt-channels-filter

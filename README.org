@@ -10,8 +10,9 @@ fetches everything with yt-dlp.  It uses no OAuth and no API key.
 - =RET= plays in mpv, which Emacs controls (pause, seek, speed, playlist,
   now-playing in the mode line, resume where you stopped).  =v= streams to
   VLC instead.
-- Channels, channel uploads, search, video details with chapters, watched
-  marks, filters, thumbnails, completion and embark actions.
+- Channels, channel uploads, the playlists a channel made (and saving them
+  in yt), search, video details with chapters, watched marks, filters,
+  thumbnails, completion and embark actions.
 
 * Requirements
 - Emacs 30.1 or later, built with SQLite support
@@ -81,6 +82,7 @@ try again; yt waits 15 minutes before sending more requests.
 |----------------+----------------------------------------------|
 | =y= or =RET=   | the subscription feed, yt's main view        |
 | =c=            | the channels you subscribe to                |
+| =P=            | the playlists you saved                      |
 | =s=            | search YouTube                               |
 | =f=            | choose a feed video with completion, play it |
 | =u=            | play a YouTube URL                           |
@@ -108,6 +110,7 @@ the info and playlist buffers):
 | =a=           | add to mpv's playlist (on the region too)                |
 | =i=           | details: description, chapters (play from there), tags  |
 | =o=           | the uploads of the video's channel                       |
+| =O=           | the playlists the video's channel made                   |
 | =w= / =u=     | mark watched / not watched (on the region too)           |
 | =b= / =y= / =Y= | open in a browser / copy the URL / copy "Title — URL"  |
 | =P=           | the player keys above                                    |
@@ -117,8 +120,15 @@ the info and playlist buffers):
 | =t w=, =t s=, =t u= | hide watched videos, Shorts, upcoming streams      |
 | =t i=         | thumbnails                                               |
 | =l=           | the channels                                             |
+| =+= / =-=     | in a playlist: save it in yt / forget it                 |
 | =L=           | sign in                                                  |
 | =S=           | sort by the column at point (tabulated-list)             |
+
+In the channels list, =o= shows a channel's uploads and =O= its playlists.
+A channel's playlists, and the saved ones (=C-c y P=), open with =RET= in
+playlist order; =+= saves the playlist at point, =-= or =d= forgets it, and
+=b= opens it in a browser.  Saved playlists live in yt's cache, not in your
+YouTube account, and show how many of their videos you have not watched.
 
 With embark, =embark-act= on a video (a completion candidate or the row at
 point) offers the same keys.  With marginalia, completion candidates show

@@ -49,7 +49,7 @@ non-nil for watched.")
 (defvar yt-cache--db nil
   "The open cache database, or nil.")
 
-(defconst yt-cache--schema-version 2
+(defconst yt-cache--schema-version 3
   "Version of the cache schema, stored as SQLite's user_version.")
 
 (defconst yt-cache--fields
@@ -67,7 +67,7 @@ and the feed index its own table.")
 
 (defun yt-cache--create-schema (db)
   "Create the tables missing from DB and record the schema version.
-Version 2 added the channels table."
+Version 2 added the channels table, version 3 the playlists table."
   (dolist (sql '("CREATE TABLE IF NOT EXISTS videos (
                    id TEXT PRIMARY KEY, data TEXT NOT NULL,
                    fetched_at INTEGER, watched INTEGER NOT NULL DEFAULT 0,
@@ -78,7 +78,9 @@ Version 2 added the channels table."
                  "CREATE INDEX IF NOT EXISTS feed_order ON feed (source, pos)"
                  "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value)"
                  "CREATE TABLE IF NOT EXISTS channels (
-                   id TEXT PRIMARY KEY, pos INTEGER NOT NULL, data TEXT NOT NULL)"))
+                   id TEXT PRIMARY KEY, pos INTEGER NOT NULL, data TEXT NOT NULL)"
+                 "CREATE TABLE IF NOT EXISTS playlists (
+                   id TEXT PRIMARY KEY, saved_at INTEGER NOT NULL, data TEXT NOT NULL)"))
     (sqlite-execute db sql))
   (sqlite-execute db (format "PRAGMA user_version = %d" yt-cache--schema-version)))
 
@@ -261,10 +263,12 @@ Return at most LIMIT videos, or `yt-cache-feed-max'."
               WHERE f.source = ? ORDER BY f.pos LIMIT ?"
              (list source (or limit yt-cache-feed-max))))))
 
-(defun yt-cache-put-feed (source videos)
+(defun yt-cache-put-feed (source videos &optional replace)
   "Merge the freshly fetched VIDEOS, in feed order, into the feed SOURCE.
 The new order is VIDEOS followed by the previously cached videos that
 are not among them, in their old order, up to `yt-cache-feed-max'.
+With REPLACE non-nil, the feed becomes VIDEOS alone, as for a
+playlist, which was fetched whole.
 Videos without a timestamp inherit one; see
 `yt-cache--inherit-timestamps'.  Return the merged feed, as
 `yt-cache-feed' would."
@@ -276,8 +280,9 @@ Videos without a timestamp inherit one; see
       (let* ((merged (yt-cache--merge-cached videos))
              (feed (seq-take
                     (append merged
-                            (seq-remove (lambda (v) (gethash (yt-video-id v) ids))
-                                        (yt-cache-feed source)))
+                            (unless replace
+                              (seq-remove (lambda (v) (gethash (yt-video-id v) ids))
+                                          (yt-cache-feed source))))
                     yt-cache-feed-max))
              (pos -1))
         ;; Inherit after merging, so that only videos the cache has no
@@ -325,6 +330,41 @@ Only the properties in `yt-cache--channel-fields' are stored."
   "Return PLIST without the properties whose value is nil."
   (cl-loop for (key value) on plist by #'cddr
            when value append (list key value)))
+
+;;;; Saved playlists
+
+(defconst yt-cache--playlist-fields '(:id :title :channel :channel-id :url)
+  "The playlist properties stored in the cache.")
+
+(defun yt-cache-saved-playlists ()
+  "Return the saved playlists, as plists, the most recently saved first.
+Each has :id, :title, :channel, :channel-id and :url."
+  (mapcar (lambda (row)
+            (json-parse-string (car row) :object-type 'plist
+                               :null-object nil :false-object nil))
+          (sqlite-select (yt-cache-db)
+                         "SELECT data FROM playlists ORDER BY saved_at DESC, rowid DESC")))
+
+(defun yt-cache-playlist-saved-p (id)
+  "Return non-nil if the playlist ID is saved."
+  (and (sqlite-select (yt-cache-db) "SELECT 1 FROM playlists WHERE id = ?" (list id)) t))
+
+(defun yt-cache-save-playlist (playlist)
+  "Save PLAYLIST, a plist with at least :id; see `yt-cache-saved-playlists'."
+  (sqlite-execute
+   (yt-cache-db)
+   "INSERT INTO playlists (id, saved_at, data) VALUES (?, ?, ?)
+    ON CONFLICT (id) DO UPDATE SET data = excluded.data"
+   (list (plist-get playlist :id) (truncate (yt--now))
+         (json-serialize
+          (yt-cache--prune-plist
+           (cl-loop for key in yt-cache--playlist-fields
+                    append (list key (plist-get playlist key)))))))
+  playlist)
+
+(defun yt-cache-forget-playlist (id)
+  "Remove the playlist ID from the saved playlists."
+  (sqlite-execute (yt-cache-db) "DELETE FROM playlists WHERE id = ?" (list id)))
 
 ;;;; Local state
 
