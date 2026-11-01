@@ -11,34 +11,84 @@
       systems = [ "x86_64-linux" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
       packagesFor = pkgs: self.packages.${pkgs.stdenv.hostPlatform.system};
+      lib = nixpkgs.lib;
+
+      # The package's own files: the top-level yt*.el, without the tests.
+      ytSrc = lib.fileset.toSource {
+        root = ./.;
+        fileset = lib.fileset.difference (lib.fileset.fileFilter (
+          f: f.hasExt "el" && lib.hasPrefix "yt" f.name && !(lib.hasSuffix "-autoloads.el" f.name)
+        ) ./.) ./test;
+      };
+
+      # yt as an Emacs package, for the emacsPackages set EPKGS.
+      mkYt =
+        epkgs:
+        epkgs.trivialBuild {
+          pname = "yt";
+          version = "0.1.0";
+          src = ytSrc;
+          turnCompilationWarningToError = true;
+          # Install the way package.el would, with autoloads, so that Emacs
+          # activates yt at startup and M-x yt works without a require.
+          installPhase = ''
+            runHook preInstall
+            dir=$out/share/emacs/site-lisp/elpa/yt-0.1.0
+            install -d $dir
+            install *.el *.elc $dir
+            cat > $dir/yt-pkg.el <<'PKG'
+            ;;; yt-pkg.el --- Package description for yt -*- no-byte-compile: t -*-
+            (define-package "yt" "0.1.0" "Browse and play your YouTube subscriptions" '((emacs "30.1")))
+            PKG
+            emacs --batch --eval "(loaddefs-generate \"$dir\" \"$dir/yt-autoloads.el\")"
+            runHook postInstall
+          '';
+          meta = {
+            description = "Browse and play your YouTube subscriptions in Emacs";
+            license = lib.licenses.gpl3Plus;
+          };
+        };
+
+      mkExporter =
+        pkgs:
+        pkgs.writers.writePython3Bin "yt-export-cookies" {
+          libraries = with pkgs.python3Packages; [
+            yt-dlp
+            secretstorage
+          ];
+        } (builtins.readFile ./bin/yt-export-cookies.py);
+
+      # What a host needs at runtime besides yt-dlp and vlc.
+      mkRuntime =
+        pkgs:
+        pkgs.buildEnv {
+          name = "yt-runtime";
+          paths = [
+            pkgs.mpv
+            (mkExporter pkgs)
+          ];
+        };
     in
     {
       packages = forAllSystems (
         pkgs:
         let
           # The only Emacs used for builds and tests; never the host Emacs.
+          # embark and marginalia are only on its load path, for the tests of
+          # yt's optional integrations; nothing loads them by default.
           emacs-test = (pkgs.emacsPackagesFor pkgs.emacs30-pgtk).emacsWithPackages (epkgs: [
             epkgs.package-lint
+            epkgs.embark
+            epkgs.marginalia
           ]);
 
-          yt-export-cookies = pkgs.writers.writePython3Bin "yt-export-cookies" {
-            libraries = with pkgs.python3Packages; [
-              yt-dlp
-              secretstorage
-            ];
-          } (builtins.readFile ./bin/yt-export-cookies.py);
         in
         {
-          inherit emacs-test yt-export-cookies;
-
-          # What a host needs at runtime besides yt-dlp and vlc.
-          runtime = pkgs.buildEnv {
-            name = "yt-runtime";
-            paths = [
-              pkgs.mpv
-              yt-export-cookies
-            ];
-          };
+          inherit emacs-test;
+          yt-export-cookies = mkExporter pkgs;
+          runtime = mkRuntime pkgs;
+          # yt, byte-compiled with the Emacs of the test setup.
+          default = mkYt (pkgs.emacsPackagesFor pkgs.emacs30-pgtk);
         }
       );
 
@@ -170,13 +220,28 @@
           checkdoc = makeCheck "checkdoc";
           lint = makeCheck "lint";
           test = makeCheck "test";
+          # The tests again with byte-compiled code, which runs faster and
+          # has caught races the interpreted run hides.
+          test-compiled = makeCheck "compile test";
+          package = p.default;
           inherit (p) yt-export-cookies;
         }
       );
 
-      # Home Manager module that installs what yt needs on a host: mpv and
-      # the cookie exporter (yt-dlp and VLC are expected from elsewhere).
-      # Enable it with `programs.yt.enable = true;'.
+      # Adds yt to every emacsPackages set (as `yt'), plus yt-el (yt for
+      # pkgs.emacs), yt-export-cookies and yt-runtime.
+      overlays.default = final: prev: {
+        emacsPackagesFor =
+          emacs: (prev.emacsPackagesFor emacs).overrideScope (efinal: _: { yt = mkYt efinal; });
+        yt-el = (final.emacsPackagesFor final.emacs).yt;
+        yt-export-cookies = mkExporter final;
+        yt-runtime = mkRuntime final;
+      };
+
+      # Home Manager module.  `programs.yt.enable' installs mpv and the
+      # cookie exporter (yt-dlp and VLC are expected from elsewhere);
+      # `programs.yt.installElisp' also adds yt to `programs.emacs'.  It
+      # does not set nixpkgs.overlays, so it works with useGlobalPkgs.
       homeModules.default =
         {
           config,
@@ -184,19 +249,25 @@
           pkgs,
           ...
         }:
+        let
+          cfg = config.programs.yt;
+        in
         {
           options.programs.yt = {
             enable = lib.mkEnableOption "the programs yt runs: mpv and yt-export-cookies";
-            package = lib.mkOption {
-              type = lib.types.package;
-              default = self.packages.${pkgs.stdenv.hostPlatform.system}.runtime;
-              defaultText = lib.literalExpression "emacs-yt.packages.\${system}.runtime";
-              description = "The package providing mpv and yt-export-cookies.";
-            };
+            installElisp = lib.mkEnableOption "yt in `programs.emacs.extraPackages`";
           };
-          config = lib.mkIf config.programs.yt.enable {
-            home.packages = [ config.programs.yt.package ];
-          };
+          config = lib.mkIf cfg.enable (
+            lib.mkMerge [
+              {
+                programs.mpv.enable = lib.mkDefault true;
+                home.packages = [ (mkExporter pkgs) ];
+              }
+              (lib.mkIf cfg.installElisp {
+                programs.emacs.extraPackages = epkgs: [ (mkYt epkgs) ];
+              })
+            ]
+          );
         };
     };
 }

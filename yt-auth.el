@@ -194,8 +194,10 @@ Google session, and its cookies would be stored in a file; use it anyway? ")))
 Call CALLBACK with OK and RESULT when done: on success RESULT is the
 exporter's summary, a plist; on failure it is a plist with :class and
 :message.  Calls made while an export is running share its result."
+  ;; An export is under way while anyone waits for it: its process may
+  ;; have exited already, with its callback still to come from a timer.
   (push callback yt-auth--export-waiters)
-  (unless (yt-process-busy-p '(yt-auth . export))
+  (unless (cdr yt-auth--export-waiters)
     (let ((profile (yt-auth-profile)))
       (if (not profile)
           (yt-process-deliver

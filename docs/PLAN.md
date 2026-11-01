@@ -351,6 +351,12 @@ Feed-only keys:
 - Fetched asynchronously by the second pass: description (with goto-address), chapters as buttons that play from that time, tags, likes.
 - `RET` runs `push-button` when point is on a button, and plays otherwise.
 
+**Changed in M6:**
+- The embark map is not a child of `yt-video-actions-map`: when embark acts on a minibuffer candidate, those commands would see the row at point in the original buffer. Instead `yt-embark-video-map` is generated from `yt-video-actions-map`: one non-interactive action per command (`yt-select-act-play`, …), which embark calls with the target, and which runs the command with the candidate as the video at point. Its parent is `embark-general-map`.
+- package-lint rejects `with-eval-after-load` in packages, so yt registers with embark and marginalia from `after-load-functions`, whichever is loaded first.
+- marginalia renamed `marginalia-annotator-registry` to `marginalia-annotators`; yt uses whichever exists.
+- `C-c y f` (`yt-select-play`) chooses a video of the current feed, or of the cached subscriptions, with completion.
+
 **Selection (`yt-select.el`):**
 - `yt-select-video` is a completing-read with category `yt-video`. Its metadata sets an annotation-function (channel, age, duration), an optional group-function by channel, and `display-sort-function identity`.
 - Candidates carry a text property, with a hash table as backup.
@@ -548,12 +554,12 @@ Input: `nixpkgs` (`github:nixos/nixpkgs/nixos-26.05`). Outputs are defined for e
 | `packages.emacs-test` | `(emacsPackagesFor emacs30-pgtk).emacsWithPackages (e: [ e.package-lint ])`. This is **the** Emacs used by all builds and tests. |
 | `packages.yt-export-cookies` | `writers.writePython3Bin` (or `stdenv.mkDerivation`) using `python3.withPackages (ps: [ps.yt-dlp ps.secretstorage])`. |
 | `packages.runtime` | `buildEnv` containing **mpv** and `yt-export-cookies`. yt-dlp and vlc are already in the user's home.packages, so they aren't duplicated here, which avoids buildEnv collisions. |
-| `packages.default` | `emacsPackages.trivialBuild { pname = "yt"; version = "0.1.0"; src = ./.; turnCompilationWarningToError = true; }`. Only the top-level `*.el` files are compiled. |
+| `packages.default` | `emacsPackages.trivialBuild { pname = "yt"; version = "0.1.0"; turnCompilationWarningToError = true; }` over the top-level `yt*.el` files. Changed in M6: it installs into `site-lisp/elpa/yt-0.1.0/` with `yt-pkg.el` and generated `yt-autoloads.el`, because `trivialBuild` makes no autoloads and Emacs activates only package.el-style directories at startup. Verified: an `emacsWithPackages (e: [ e.yt ])` built through the overlay has `yt` autoloaded. |
 | `devShells.default` | `emacs-test`, gnumake, jq, curl, mpv, yt-dlp, vlc, `yt-export-cookies`. Exports `YT_EMACS=${emacs-test}/bin/emacs`. |
 | `apps.test` | Runs `make test` with `EMACS=$YT_EMACS` and the isolated environment (§11). |
 | `apps.sandbox` | Separate GUI Emacs for manual and live testing (§11). |
-| `checks.<sys>.{compile,lint,checkdoc,test}` | `runCommand`s that run `make <target>` with `HOME=$TMPDIR`. Shebangs are patched with `patchShebangs test/bin`. |
-| `overlays.default` | Adds `yt-el`, `yt-export-cookies`, and `yt-runtime`. |
+| `checks.<sys>.{compile,lint,checkdoc,test,test-compiled,package}` (`test-compiled` and `package` added in M6) | `runCommand`s that run `make <target>` with `HOME=$TMPDIR`. Shebangs are patched with `patchShebangs test/bin`. |
+| `overlays.default` | Adds `yt` to every `emacsPackagesFor` set (`overrideScope`), plus `yt-el`, `yt-export-cookies`, and `yt-runtime`. |
 | `homeModules.default` | `programs.yt.enable` sets `programs.mpv.enable = lib.mkDefault true;` and adds `yt-export-cookies` to `home.packages`. With `programs.yt.installElisp`, it also adds the elisp package to `programs.emacs.extraPackages`. It does **not** set `nixpkgs.overlays`, because the dotfiles use `useGlobalPkgs = true`. |
 
 **How the dotfiles could consume this flake** (on the one host that has the checkout). Since 2026-11-01 the project does **not** use or change the dotfiles (user's decision). This is only a reference in case the user wires it up later:
@@ -667,7 +673,7 @@ After each milestone: report what changed, what was tested, and what is still op
 | **M3** (done) | yt-player and yt-vlc: `RET`/`v` plays through VLC, marked watched at start, with format fallback. **All three requirements are now covered** (playback via VLC). | `v` on a sandbox feed row plays with separate audio and video streams. | argv, resolver `-j` parsing (combined vs separate formats, `available_at`, headers), wait-timer, format-retry scenario |
 | **M4** (done) | yt-mpv: spawn with WAYLAND_DISPLAY, IPC, play/enqueue/pause/seek/speed/next/stop/quit, `yt-player-mode`, watched near the end, resume, cleanup on exit, the `auto` backend default, transient repeat, `homeModules.default` (mpv for the host) | In the sandbox, `RET` plays in mpv. `C-c y SPC` pauses. Closing mpv leaves no socket behind and marks the video watched past 90%. | The full fake-socket suite (above) |
 | **M5** (done) | Channels view, channel uploads (`o`, `l`), info buffer (`i`, second-pass queue), search (`C-c y s`), playlist buffer | `l` → `RET` shows uploads. `i` shows the description and chapters, and a chapter plays from its timestamp. | Parsers, rendering, the queue limit |
-| **M6** | yt-select, marginalia, embark, `overlays.default`, `packages.default` (trivialBuild), `installElisp` | `embark-act` on a candidate plays it, in the sandbox with embark loaded. `nix build` succeeds. | Candidate and annotation tests |
+| **M6** (done) | yt-select, marginalia, embark, `overlays.default`, `packages.default` (trivialBuild), `installElisp` | `embark-act` on a candidate plays it, in the sandbox with embark loaded. `nix build` succeeds. | Candidate and annotation tests |
 | **M7** | Thumbnails, face polish, the full `yt-doctor` (yt-dlp version and JS runtime, mpv/vlc, WAYLAND_DISPLAY and DBUS_SESSION_BUS_ADDRESS, profile, auth state, cookie file **modes and counts only**, cache path), README (install, profile setup, keys, sway snippet, privacy, known limitations), the host `use-package` snippet | Thumbnails load without blocking, measured the same way as in M2. `make all` passes. | Thumbnail queue, dedup, and `.part` rename |
 
 ## 13. Privacy notes (README)

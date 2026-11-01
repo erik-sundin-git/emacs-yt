@@ -346,6 +346,7 @@ The first time, this signs in with \\[yt-login]."
 
 (declare-function yt-feed-subscriptions "yt-feed" ())
 (declare-function yt-search "yt-feed" (query))
+(declare-function yt-select-play "yt-select" (video))
 (declare-function yt-channels "yt-channels" ())
 (declare-function yt-player-playlist "yt-player" ())
 (declare-function yt-play-url "yt-player" (url))
@@ -393,6 +394,7 @@ Bind it to a key of your choice, for example \\`C-c y'."
   "u" #'yt-play-url
   "c" #'yt-channels
   "s" #'yt-search
+  "f" #'yt-select-play
   "L" #'yt-login
   "d" #'yt-doctor)
 

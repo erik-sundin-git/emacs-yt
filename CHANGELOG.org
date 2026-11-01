@@ -1,6 +1,20 @@
 #+title: yt changelog
 
 * Unreleased
+** M6: completion, embark, marginalia and Nix packaging
+- =yt-select.el=: =C-c y f= chooses a video of the feed with completion
+  (category =yt-video=, annotated with channel, age and duration, optionally
+  grouped by channel) and plays it.
+- With embark, every video key acts on a =yt-video= candidate, and on the
+  video at point in yt buffers.  With marginalia, the annotations are
+  registered for the category.
+- =packages.default= builds yt as an Emacs package with autoloads;
+  =overlays.default= adds =yt= to every Emacs package set; the Home Manager
+  module gained =programs.yt.installElisp= and now enables =programs.mpv=.
+- New checks: the tests with byte-compiled code, and the package build.
+- Fixed: two runs finding the session expired at nearly the same moment
+  could export the cookies twice.
+- 6 new tests (137 in total).
 ** M5: channels, uploads, search, info and playlist
 - =yt-channels.el=: =C-c y c= (=l= in the feed) lists the subscribed channels
   with the number of unwatched feed videos and their last upload; =RET=
