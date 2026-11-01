@@ -25,8 +25,8 @@
   "A fake mpv IPC server.
 RECEIVED holds the messages received, oldest first.  ERRORS maps
 command names to the error to reply with; commands in SILENT get no
-reply."
-  process client (partial "") received (next-entry 1) errors silent)
+reply.  REPLIES maps command names to the data to reply with."
+  process client (partial "") received (next-entry 1) errors silent replies)
 
 (defun yt-mpv-test--command-name (message)
   "Return the command name of the IPC MESSAGE."
@@ -37,10 +37,12 @@ reply."
   "Answer MESSAGE as mpv would, through SERVER."
   (let* ((name (yt-mpv-test--command-name message))
          (error (or (cdr (assoc name (yt-mpv-test--server-errors server))) "success"))
-         (data (and (equal error "success") (equal name "loadfile")
-                    (list :playlist_entry_id
-                          (prog1 (yt-mpv-test--server-next-entry server)
-                            (cl-incf (yt-mpv-test--server-next-entry server)))))))
+         (data (and (equal error "success")
+                    (if (equal name "loadfile")
+                        (list :playlist_entry_id
+                              (prog1 (yt-mpv-test--server-next-entry server)
+                                (cl-incf (yt-mpv-test--server-next-entry server))))
+                      (cdr (assoc name (yt-mpv-test--server-replies server)))))))
     (unless (member name (yt-mpv-test--server-silent server))
       (process-send-string
        (yt-mpv-test--server-client server)
@@ -510,6 +512,35 @@ A sleeping process stands in for mpv."
                        '("append-play" "append-play")))
         (should (string-match-p "itag=137" (plist-get (plist-get (car loads) :command) :url)))
         (should (string-match-p "itag=18" (plist-get (plist-get (cadr loads) :command) :url)))))))
+
+(ert-deftest yt-mpv-playlist-buffer ()
+  "The playlist buffer lists mpv's entries and plays or removes them."
+  (yt-mpv-test--with-mpv (_ytdlp _mpv)
+    (let* ((server (yt-mpv-test--connect))
+           (first (yt-mpv-test--video "videolist01" :channel "Fake Channel One"
+                                      :duration 60))
+           (second (yt-mpv-test--video "videolist02"))
+           (id1 (yt-mpv-test--load server first))
+           (id2 (yt-mpv-test--load server second "append-play")))
+      (setq yt-player--current-backend 'mpv)
+      (setf (yt-mpv-test--server-replies server)
+            `(("get_property" . [(:id ,id1 :filename "a" :current t :playing t)
+                                 (:id ,id2 :filename "b")])))
+      (with-current-buffer (yt-player-playlist)
+        (yt-test-wait-until (lambda () yt-playlist--items) "playlist")
+        (let ((text (buffer-string)))
+          (should (string-match-p "▶ +1 +1:00 Fake Channel One +Title videolist01" text))
+          (should (string-match-p "  +2 +Title videolist02" text)))
+        (goto-char (point-min))
+        (search-forward "videolist02")
+        (should (eq (yt-video-at-point) second))
+        (yt-playlist-play)
+        (should (equal (plist-get (yt-mpv-test--wait-for server "playlist-play-index") :command)
+                       '("playlist-play-index" 1)))
+        (yt-playlist-remove)
+        (should (equal (plist-get (yt-mpv-test--wait-for server "playlist-remove") :command)
+                       '("playlist-remove" 1)))
+        (kill-buffer)))))
 
 (ert-deftest yt-mpv-check-reports-missing-mpv ()
   "Without mpv, playing explains how to install it."

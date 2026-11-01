@@ -36,6 +36,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'tabulated-list)
 (require 'yt)
 (require 'yt-video)
 (require 'yt-process)
@@ -79,6 +80,15 @@ to start at, in seconds, or nil.")
 (cl-defgeneric yt-player-backend-command (backend command &rest _args)
   "Send COMMAND, a symbol such as `pause', to the BACKEND."
   (user-error "The %s player does not support `%s'" backend command))
+
+(cl-defgeneric yt-player-backend-playlist (backend _callback)
+  "Call CALLBACK with the playlist of BACKEND.
+The playlist is a list of plists with :index (from 0), :id, :title,
+:current and :video, the `yt-video' or nil."
+  (user-error "The %s player has no playlist" backend))
+
+(defvar yt-player-playlist-changed-hook nil
+  "Hook run by backends when their playlist may have changed.")
 
 (defun yt-player--mpv-available-p ()
   "Return non-nil if mpv and yt's mpv backend are installed."
@@ -312,6 +322,11 @@ argument plays from the start."
     (yt-player--start (or backend (yt-player-backend)) video start)))
 
 ;;;###autoload
+(defun yt-play-at (video start &optional backend)
+  "Play VIDEO with BACKEND from START seconds."
+  (yt-player--start (or backend (yt-player-backend)) video start))
+
+;;;###autoload
 (defun yt-play-vlc (video &optional from-start)
   "Play VIDEO in VLC, from the start if FROM-START is non-nil.
 Interactively, play the video at point, or ask for a URL."
@@ -327,9 +342,7 @@ Interactively, play the video at point, or ask for a URL."
 
 (defun yt-player--selected-videos ()
   "Return the videos in the region or the video at point, or ask for a URL."
-  (or (and (use-region-p) (fboundp 'yt-feed--selected-videos)
-           (derived-mode-p 'tabulated-list-mode)
-           (yt-feed--selected-videos))
+  (or (and (use-region-p) (yt-selected-videos))
       (list (yt-player--read-video))))
 
 ;;;###autoload
@@ -511,6 +524,191 @@ It is turned on when mpv starts playing."
   (when yt-player-mode
     (setq global-mode-string (append global-mode-string '(yt-player--mode-line))))
   (force-mode-line-update t))
+
+;;;; Commands on videos
+
+
+(defun yt-selected-videos ()
+  "Return the videos in the region, or the video at point.
+This works in every yt buffer, through `yt-video-at-point'.
+Signal a `user-error' if there is none."
+  (or (if (use-region-p)
+          (let ((end (region-end))
+                videos)
+            (save-excursion
+              (goto-char (region-beginning))
+              (while (and (< (point) end) (not (eobp)))
+                (when-let* ((video (yt-video-at-point)))
+                  (push video videos))
+                (forward-line 1)))
+            (nreverse videos))
+        (ensure-list (yt-video-at-point)))
+      (user-error "No video here")))
+
+(defun yt-player--mark (unwatched)
+  "Mark the selected videos as watched, or not if UNWATCHED is non-nil.
+Without a region, move to the next row."
+  (let* ((region (use-region-p))
+         (videos (yt-selected-videos))
+         (id (yt-video-id (car videos))))
+    (yt-mark-watched videos unwatched)
+    (if region
+        (deactivate-mark)
+      (let ((here (yt-video-at-point)))
+        (when (and here (equal (yt-video-id here) id))
+          (forward-line 1))))))
+
+(defun yt-mark-video-watched ()
+  "Mark the video at point, or the videos in the region, as watched."
+  (interactive)
+  (yt-player--mark nil))
+
+(defun yt-mark-video-unwatched ()
+  "Mark the video at point, or the videos in the region, as not watched."
+  (interactive)
+  (yt-player--mark t))
+
+(defun yt-browse-video ()
+  "Open the video at point in a web browser."
+  (interactive)
+  (browse-url (yt-video-url (car (yt-selected-videos)))))
+
+(defun yt-copy-video-url ()
+  "Copy the URL of the video at point to the kill ring."
+  (interactive)
+  (let ((url (yt-video-url (car (yt-selected-videos)))))
+    (kill-new url)
+    (message "Copied %s" url)))
+
+(defun yt-copy-video-title-and-url ()
+  "Copy \"Title — URL\" of the video at point to the kill ring."
+  (interactive)
+  (let* ((video (car (yt-selected-videos)))
+         (text (format "%s — %s" (or (yt-video-title video) (yt-video-id video))
+                       (yt-video-url video))))
+    (kill-new text)
+    (message "Copied %s" text)))
+
+(declare-function yt-info "yt-info" (video))
+(declare-function yt-feed-open-channel "yt-feed" (video))
+
+(defvar-keymap yt-video-actions-map
+  :doc "Keys acting on the video at point, shared by yt buffers."
+  "RET" #'yt-play
+  "v" #'yt-play-vlc
+  "m" #'yt-play-mpv
+  "a" #'yt-enqueue
+  "i" #'yt-info
+  "o" #'yt-feed-open-channel
+  "P" yt-player-map
+  "w" #'yt-mark-video-watched
+  "u" #'yt-mark-video-unwatched
+  "b" #'yt-browse-video
+  "y" #'yt-copy-video-url
+  "Y" #'yt-copy-video-title-and-url)
+
+;;;; Playlist
+
+(defconst yt-player-playlist-buffer "*yt-playlist*"
+  "Name of the playlist buffer.")
+
+(defvar-local yt-playlist--items nil
+  "The playlist shown, as from `yt-player-backend-playlist'.")
+
+(defun yt-playlist--entries ()
+  "Return the tabulated-list entries of the playlist."
+  (mapcar (lambda (item)
+            (let ((video (plist-get item :video)))
+              (list (plist-get item :id)
+                    (vector (if (plist-get item :current) "▶" " ")
+                            (number-to-string (1+ (plist-get item :index)))
+                            (yt-video-format-duration (and video (yt-video-duration video)))
+                            (or (and video (yt-video-channel video)) "")
+                            (or (plist-get item :title) "")))))
+          yt-playlist--items))
+
+(defun yt-playlist--item ()
+  "Return the playlist item at point, or signal a `user-error'."
+  (let ((id (tabulated-list-get-id)))
+    (or (and id (seq-find (lambda (item) (equal (plist-get item :id) id))
+                          yt-playlist--items))
+        (user-error "No playlist entry here"))))
+
+(defun yt-playlist--video-at-point ()
+  "Return the video of the playlist entry at point, or nil."
+  (when-let* ((id (tabulated-list-get-id)))
+    (plist-get (seq-find (lambda (item) (equal (plist-get item :id) id))
+                         yt-playlist--items)
+               :video)))
+
+(defun yt-playlist-refresh ()
+  "Show the player's playlist again."
+  (interactive nil yt-playlist-mode)
+  (unless yt-player--current-backend
+    (user-error "Nothing is playing"))
+  (let ((buffer (current-buffer)))
+    (yt-player-backend-playlist
+     yt-player--current-backend
+     (lambda (items)
+       (when (buffer-live-p buffer)
+         (with-current-buffer buffer
+           (setq yt-playlist--items items)
+           (tabulated-list-print t)))))))
+
+(defun yt-playlist--changed ()
+  "Refresh the playlist buffer, if there is one."
+  (when-let* ((buffer (get-buffer yt-player-playlist-buffer)))
+    (with-current-buffer buffer
+      (when (and (derived-mode-p 'yt-playlist-mode) yt-player--current-backend)
+        (ignore-errors (yt-playlist-refresh))))))
+
+(defun yt-playlist-play ()
+  "Play the playlist entry at point."
+  (interactive nil yt-playlist-mode)
+  (yt-player-backend-command yt-player--current-backend 'play-index
+                             (plist-get (yt-playlist--item) :index)))
+
+(defun yt-playlist-remove ()
+  "Remove the playlist entry at point."
+  (interactive nil yt-playlist-mode)
+  (yt-player-backend-command yt-player--current-backend 'remove
+                             (plist-get (yt-playlist--item) :index))
+  (yt-playlist-refresh))
+
+(defvar-keymap yt-playlist-mode-map
+  :doc "Keymap for `yt-playlist-mode'."
+  :parent (make-composed-keymap yt-video-actions-map tabulated-list-mode-map)
+  "RET" #'yt-playlist-play
+  "d" #'yt-playlist-remove
+  "g" #'yt-playlist-refresh)
+
+(define-derived-mode yt-playlist-mode tabulated-list-mode "yt-playlist"
+  "Major mode for the player's playlist.
+\{yt-playlist-mode-map}"
+  :group 'yt-player
+  :interactive nil
+  (setq tabulated-list-format [(" " 1 nil) ("#" 3 nil :right-align t)
+                               ("Dur" 8 nil :right-align t) ("Channel" 20 nil)
+                               ("Title" 50 nil)]
+        tabulated-list-entries #'yt-playlist--entries)
+  (setq-local yt-video-at-point-function #'yt-playlist--video-at-point)
+  (setq-local revert-buffer-function (lambda (&rest _) (yt-playlist-refresh)))
+  (add-hook 'yt-player-playlist-changed-hook #'yt-playlist--changed)
+  (tabulated-list-init-header))
+
+;;;###autoload
+(defun yt-player-playlist ()
+  "Show the player's playlist."
+  (interactive)
+  (unless yt-player--current-backend
+    (user-error "Nothing is playing"))
+  (let ((buffer (get-buffer-create yt-player-playlist-buffer)))
+    (with-current-buffer buffer
+      (unless (derived-mode-p 'yt-playlist-mode)
+        (yt-playlist-mode))
+      (yt-playlist-refresh))
+    (pop-to-buffer buffer)
+    buffer))
 
 (provide 'yt-player)
 ;;; yt-player.el ends here

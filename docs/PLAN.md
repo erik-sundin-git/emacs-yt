@@ -334,6 +334,14 @@ Feed-only keys:
 
 **Watched redraw:** `yt-watched-changed-functions` makes each live feed buffer find the row by id and re-print that one line inside `save-excursion`.
 
+**Changed in M5:**
+- The channels view is its own file, `yt-channels.el`. The list (264 channels in one `-J` call, about 2 s) is cached in a `channels(id, pos, data)` table, added by schema version 2; a version 1 cache is migrated on open. It is fetched again after a day or with `g`.
+- Channel uploads need `--extractor-args youtubetab:approximate_date` like the subscription feed, or they have no times at all, and their entries name the channel only as `playlist_channel`/`playlist_channel_id`, which `yt-video-from-json` now falls back to.
+- `yt-feed--source` is `subscriptions`, `(channel ID URL NAME)` or `(search QUERY)`. Search results are cached as videos (for watched marks) but not as a feed; the query is replaced by `REDACTED` in `*yt-log*` through `yt-auth-run`'s `:redact`.
+- The shared video commands (`w`, `u`, `b`, `y`, `Y`), `yt-selected-videos` and `yt-video-actions-map` moved to `yt-player.el`, so the playlist and info buffers can use them; they find videos through `yt-video-at-point`.
+- The info fetch stores the exact upload time in the cache. A merge used to copy the old "approximate" flag onto the new exact time; the flag now always comes with its timestamp.
+- The playlist buffer is in `yt-player.el`, through a `yt-player-backend-playlist` generic; backends run `yt-player-playlist-changed-hook` when files start or end.
+
 **Channels view:**
 - Columns: Channel, Unwatched, Last upload.
 - `RET` opens the channel's uploads in `yt-feed-mode`, `/` filters, `b` browses.
@@ -658,7 +666,7 @@ After each milestone: report what changed, what was tested, and what is still op
 | **M2** (done) | yt-cache and yt-feed: `M-x yt` is the home view (cache first, then refresh), with header line, `g`/`G`, filters, `w`/`u`, `b`/`y`/`Y`, and automatic login on first run | After a sandbox restart the cached feed shows immediately. Point stays on the same video id after refresh. `(yt)` returns in under 200 ms under hang mode. | Render, sort, point, filters, cache round-trip and reopen, watched-hook redraw |
 | **M3** (done) | yt-player and yt-vlc: `RET`/`v` plays through VLC, marked watched at start, with format fallback. **All three requirements are now covered** (playback via VLC). | `v` on a sandbox feed row plays with separate audio and video streams. | argv, resolver `-j` parsing (combined vs separate formats, `available_at`, headers), wait-timer, format-retry scenario |
 | **M4** (done) | yt-mpv: spawn with WAYLAND_DISPLAY, IPC, play/enqueue/pause/seek/speed/next/stop/quit, `yt-player-mode`, watched near the end, resume, cleanup on exit, the `auto` backend default, transient repeat, `homeModules.default` (mpv for the host) | In the sandbox, `RET` plays in mpv. `C-c y SPC` pauses. Closing mpv leaves no socket behind and marks the video watched past 90%. | The full fake-socket suite (above) |
-| **M5** | Channels view, channel uploads (`o`, `l`), info buffer (`i`, second-pass queue), search (`C-c y s`), playlist buffer | `l` → `RET` shows uploads. `i` shows the description and chapters, and a chapter plays from its timestamp. | Parsers, rendering, the queue limit |
+| **M5** (done) | Channels view, channel uploads (`o`, `l`), info buffer (`i`, second-pass queue), search (`C-c y s`), playlist buffer | `l` → `RET` shows uploads. `i` shows the description and chapters, and a chapter plays from its timestamp. | Parsers, rendering, the queue limit |
 | **M6** | yt-select, marginalia, embark, `overlays.default`, `packages.default` (trivialBuild), `installElisp` | `embark-act` on a candidate plays it, in the sandbox with embark loaded. `nix build` succeeds. | Candidate and annotation tests |
 | **M7** | Thumbnails, face polish, the full `yt-doctor` (yt-dlp version and JS runtime, mpv/vlc, WAYLAND_DISPLAY and DBUS_SESSION_BUS_ADDRESS, profile, auth state, cookie file **modes and counts only**, cache path), README (install, profile setup, keys, sway snippet, privacy, known limitations), the host `use-package` snippet | Thumbnails load without blocking, measured the same way as in M2. `make all` passes. | Thumbnail queue, dedup, and `.part` rename |
 

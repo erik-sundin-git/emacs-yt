@@ -78,6 +78,32 @@ Calling from a timer keeps errors in FN out of process sentinels."
   "Return non-nil if a run with KEY has not finished yet."
   (and key (gethash key yt-process--running) t))
 
+(cl-defstruct (yt-process-queue (:constructor yt-process-queue-create (limit))
+                                (:copier nil))
+  "A queue that runs at most LIMIT jobs at once."
+  limit (running 0) (waiting nil))
+
+(defun yt-process-queue-run (queue job)
+  "Run JOB through QUEUE, now if fewer than its limit are running.
+JOB is a function called with one argument, a function that JOB must
+call once when it is done, successful or not."
+  (setf (yt-process-queue-waiting queue)
+        (append (yt-process-queue-waiting queue) (list job)))
+  (yt-process--queue-next queue))
+
+(defun yt-process--queue-next (queue)
+  "Start waiting jobs of QUEUE while it is below its limit."
+  (while (and (yt-process-queue-waiting queue)
+              (< (yt-process-queue-running queue) (yt-process-queue-limit queue)))
+    (let ((job (pop (yt-process-queue-waiting queue)))
+          (done nil))
+      (cl-incf (yt-process-queue-running queue))
+      (funcall job (lambda ()
+                     (unless done
+                       (setq done t)
+                       (cl-decf (yt-process-queue-running queue))
+                       (yt-process--queue-next queue)))))))
+
 (cl-defun yt-process-run (program args &key on-success on-error on-line
                                   (parse 'json) timeout key force env
                                   log-args)

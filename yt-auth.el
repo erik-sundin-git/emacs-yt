@@ -286,10 +286,11 @@ VALUE and INFO are what the run returned."
   (pcase source
     ('feed (and (zerop (or (plist-get info :lines) 0))
                 (not (plist-get info :stopped))))
-    ('verify (null (plist-get value :entries)))))
+    ((or 'verify 'channels) (null (plist-get value :entries)))))
 
 (cl-defun yt-auth-run (args &key on-success on-error on-line (parse 'json)
-                            key force source ignore-backoff retried timeout)
+                            key force source ignore-backoff retried timeout
+                            redact)
   "Run yt-dlp with ARGS and a private copy of the YouTube cookies.
 ARGS come from one of the `yt-ytdlp-*-args' functions.  ON-SUCCESS,
 ON-ERROR, ON-LINE, PARSE, KEY, FORCE and TIMEOUT are as for
@@ -297,12 +298,14 @@ ON-ERROR, ON-LINE, PARSE, KEY, FORCE and TIMEOUT are as for
 warning class or nil.  The plist given to ON-ERROR also has :class
 and :message, which is suitable for showing to the user.
 
-SOURCE is `feed' or `verify' for requests that need a signed-in
-session; for those, an empty result means the session has expired.
+SOURCE is `feed', `verify' or `channels' for requests that need a
+signed-in session; for those, an empty result means the session has
+expired.
 An expired session is re-exported and the run retried once.
 While yt backs off after a bot check or rate limit, the run fails
-at once unless IGNORE-BACKOFF is non-nil.  RETRIED is for internal
-use."
+at once unless IGNORE-BACKOFF is non-nil.  REDACT is a list of
+arguments, such as a search query, to leave out of *yt-log*.
+RETRIED is for internal use."
   (let ((master (yt-auth-cookie-file))
         (backoff (and (not ignore-backoff) (yt-auth--backing-off))))
     (cond
@@ -323,7 +326,7 @@ use."
                       (yt-auth-run args :on-success on-success :on-error on-error
                                    :on-line on-line :parse parse :key key
                                    :source source :ignore-backoff ignore-backoff
-                                   :retried t :timeout timeout)))
+                                   :retried t :timeout timeout :redact redact)))
              (copy (yt-auth--copy-cookies master))
              (argv (condition-case err
                        (yt-ytdlp-args copy args)
@@ -337,6 +340,9 @@ use."
         (or (yt-process-run
              yt-ytdlp-program argv
              :key key :force force :parse parse :on-line on-line :timeout timeout
+             :log-args (and redact
+                            (mapcar (lambda (arg) (if (member arg redact) "REDACTED" arg))
+                                    argv))
              :on-success
              (lambda (value info)
                (let ((class (if (yt-auth--empty-result-p source value info)

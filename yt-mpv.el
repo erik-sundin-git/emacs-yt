@@ -351,6 +351,7 @@ with nil and an error message.  Return the request id."
 (defun yt-mpv--start-file (id)
   "Handle the start of playlist entry ID."
   (setq yt-mpv--current id)
+  (run-hooks 'yt-player-playlist-changed-hook)
   (let ((entry (yt-mpv--entry id)))
     (setf (yt-mpv--entry-max-pos entry) 0
           (yt-mpv--entry-pos entry) nil)
@@ -413,6 +414,7 @@ Stream URLs expire after some hours, which breaks queued entries."
   (let ((entry (gethash id yt-mpv--entries)))
     (when (eql id yt-mpv--current)
       (setq yt-mpv--current nil))
+    (run-hooks 'yt-player-playlist-changed-hook)
     (cond
      ((equal reason "redirect"))
      ((equal reason "error")
@@ -568,7 +570,30 @@ RETRIED non-nil means this is a second try after an error."
     ('next (yt-mpv-send '("playlist-next" "weak")))
     ('previous (yt-mpv-send '("playlist-prev" "weak")))
     ('quit (yt-mpv-send '("quit")))
+    ('play-index (yt-mpv-send (list "playlist-play-index" (car args)) #'yt-mpv--report))
+    ('remove (yt-mpv-send (list "playlist-remove" (car args)) #'yt-mpv--report))
     (_ (cl-call-next-method))))
+
+(cl-defmethod yt-player-backend-playlist ((_backend (eql 'mpv)) callback)
+  "Call CALLBACK with mpv's playlist."
+  (unless (yt-mpv--process-alive-p)
+    (user-error "The mpv player is not running"))
+  (yt-mpv-send
+   '("get_property" "playlist")
+   (lambda (data error)
+     (if error
+         (message "mpv: %s" error)
+       (funcall callback
+                (cl-loop for item in data
+                         for index from 0
+                         collect
+                         (let* ((entry (gethash (plist-get item :id) yt-mpv--entries))
+                                (video (and entry (yt-mpv--entry-video entry))))
+                           (list :index index :id (plist-get item :id)
+                                 :current (and (plist-get item :current) t)
+                                 :title (or (and video (yt-player--title video))
+                                            (plist-get item :title) "…")
+                                 :video video))))))))
 
 (provide 'yt-mpv)
 ;;; yt-mpv.el ends here

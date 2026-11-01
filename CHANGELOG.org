@@ -1,6 +1,23 @@
 #+title: yt changelog
 
 * Unreleased
+** M5: channels, uploads, search, info and playlist
+- =yt-channels.el=: =C-c y c= (=l= in the feed) lists the subscribed channels
+  with the number of unwatched feed videos and their last upload; =RET=
+  shows a channel's uploads, =/= filters, =b= browses.  The list is cached
+  for a day.
+- Channel uploads (=RET= in the channels list, =o= on any video) show in
+  =yt-feed-mode=, cached and refreshed like the subscription feed.
+- =C-c y s= searches YouTube; the query is kept out of the logs.
+- =yt-info.el=: =i= shows a video at once, then its description (with
+  links), chapters as buttons that play from their start, tags, views,
+  likes and the exact upload time.  At most two such fetches run at once.
+- =C-c y l= (=P l=) shows mpv's playlist: =RET= plays an entry, =d=
+  removes it, =g= refreshes; it follows mpv as files start and end.
+- The video keys (=RET=, =v=, =m=, =a=, =i=, =o=, =w=, =u=, =b=, =y=, =Y=)
+  work in the feed, info and playlist buffers alike.
+- Fixed: an exact upload time stayed marked approximate after merging.
+- 11 new tests (131 in total).
 ** M4: mpv controlled from Emacs
 - =yt-mpv.el=: one idle mpv, started on first use on the selected frame's
   display and driven over JSON IPC through a socket in the private runtime

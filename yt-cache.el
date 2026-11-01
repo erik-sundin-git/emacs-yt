@@ -49,7 +49,7 @@ non-nil for watched.")
 (defvar yt-cache--db nil
   "The open cache database, or nil.")
 
-(defconst yt-cache--schema-version 1
+(defconst yt-cache--schema-version 2
   "Version of the cache schema, stored as SQLite's user_version.")
 
 (defconst yt-cache--fields
@@ -66,7 +66,8 @@ and the feed index its own table.")
 ;;;; Opening
 
 (defun yt-cache--create-schema (db)
-  "Create the tables in the empty database DB."
+  "Create the tables missing from DB and record the schema version.
+Version 2 added the channels table."
   (dolist (sql '("CREATE TABLE IF NOT EXISTS videos (
                    id TEXT PRIMARY KEY, data TEXT NOT NULL,
                    fetched_at INTEGER, watched INTEGER NOT NULL DEFAULT 0,
@@ -75,7 +76,9 @@ and the feed index its own table.")
                    source TEXT NOT NULL, id TEXT NOT NULL, pos INTEGER NOT NULL,
                    PRIMARY KEY (source, id))"
                  "CREATE INDEX IF NOT EXISTS feed_order ON feed (source, pos)"
-                 "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value)"))
+                 "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value)"
+                 "CREATE TABLE IF NOT EXISTS channels (
+                   id TEXT PRIMARY KEY, pos INTEGER NOT NULL, data TEXT NOT NULL)"))
     (sqlite-execute db sql))
   (sqlite-execute db (format "PRAGMA user_version = %d" yt-cache--schema-version)))
 
@@ -95,7 +98,7 @@ and the feed index its own table.")
           (sqlite-pragma db "journal_mode = WAL")
           (sqlite-execute db "BEGIN IMMEDIATE")
           (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
-            (cond ((eql version 0) (yt-cache--create-schema db))
+            (cond ((< version yt-cache--schema-version) (yt-cache--create-schema db))
                   ((> version yt-cache--schema-version)
                    (user-error "The yt cache %s was written by a newer yt" file))))
           (sqlite-execute db "COMMIT")
@@ -174,7 +177,8 @@ approximate time gets less precise the later it is fetched."
   (when (<= (yt-cache--timestamp-rank new) (yt-cache--timestamp-rank old))
     (setf (yt-video-timestamp new) (yt-video-timestamp old)
           (yt-video-timestamp-approx-p new) (yt-video-timestamp-approx-p old)))
-  (dolist (field yt-cache--fields)
+  ;; The approximate flag belongs to the timestamp, decided above.
+  (dolist (field (remq 'timestamp-approx-p yt-cache--fields))
     (unless (cl-struct-slot-value 'yt-video field new)
       (setf (cl-struct-slot-value 'yt-video field new)
             (cl-struct-slot-value 'yt-video field old))))
@@ -286,6 +290,41 @@ Videos without a timestamp inherit one; see
           (sqlite-execute db "INSERT INTO feed (source, id, pos) VALUES (?, ?, ?)"
                           (list source (yt-video-id video) pos)))
         feed))))
+
+;;;; Channels
+
+(defconst yt-cache--channel-fields '(:id :name :url :followers)
+  "The channel properties stored in the cache.")
+
+(defun yt-cache-channels ()
+  "Return the cached subscribed channels, as plists, in their order.
+Each has :id, :name, :url and :followers; see `yt-cache-put-channels'."
+  (mapcar (lambda (row)
+            (json-parse-string (car row) :object-type 'plist
+                               :null-object nil :false-object nil))
+          (sqlite-select (yt-cache-db) "SELECT data FROM channels ORDER BY pos")))
+
+(defun yt-cache-put-channels (channels)
+  "Replace the cached subscribed channels with CHANNELS, a list of plists.
+Only the properties in `yt-cache--channel-fields' are stored."
+  (let ((db (yt-cache-db))
+        (pos -1))
+    (yt-cache--with-transaction db
+      (sqlite-execute db "DELETE FROM channels")
+      (dolist (channel channels)
+        (sqlite-execute
+         db "INSERT OR REPLACE INTO channels (id, pos, data) VALUES (?, ?, ?)"
+         (list (plist-get channel :id) (cl-incf pos)
+               (json-serialize
+                (yt-cache--prune-plist
+                 (cl-loop for key in yt-cache--channel-fields
+                          append (list key (plist-get channel key)))))))))
+    channels))
+
+(defun yt-cache--prune-plist (plist)
+  "Return PLIST without the properties whose value is nil."
+  (cl-loop for (key value) on plist by #'cddr
+           when value append (list key value)))
 
 ;;;; Local state
 

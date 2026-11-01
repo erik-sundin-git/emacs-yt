@@ -345,6 +345,9 @@ The first time, this signs in with \\[yt-login]."
   (yt-feed-subscriptions))
 
 (declare-function yt-feed-subscriptions "yt-feed" ())
+(declare-function yt-search "yt-feed" (query))
+(declare-function yt-channels "yt-channels" ())
+(declare-function yt-player-playlist "yt-player" ())
 (declare-function yt-play-url "yt-player" (url))
 (declare-function yt-player-stop "yt-player" ())
 (declare-function yt-player-quit "yt-player" ())
@@ -376,6 +379,7 @@ It is bound under \\`P' in yt buffers, and its keys are also in `yt-map'."
   "=" #'yt-player-normal-speed
   "n" #'yt-player-next
   "p" #'yt-player-previous
+  "l" #'yt-player-playlist
   "S" #'yt-player-stop
   "Q" #'yt-player-quit
   "!" #'yt-player-show-log)
@@ -387,6 +391,8 @@ Bind it to a key of your choice, for example \\`C-c y'."
   :parent yt-player-map
   "y" #'yt
   "u" #'yt-play-url
+  "c" #'yt-channels
+  "s" #'yt-search
   "L" #'yt-login
   "d" #'yt-doctor)
 

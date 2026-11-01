@@ -98,9 +98,14 @@ timestamp is approximate, as with the extractor argument
         (yt-video--make
          :id id
          :title (yt-video--string (plist-get entry :title))
+         ;; Entries of a channel's uploads name the channel only as the
+         ;; playlist's.
          :channel (or (yt-video--string (plist-get entry :channel))
-                      (yt-video--string (plist-get entry :uploader)))
-         :channel-id (yt-video--string (plist-get entry :channel_id))
+                      (yt-video--string (plist-get entry :uploader))
+                      (yt-video--string (plist-get entry :playlist_channel))
+                      (yt-video--string (plist-get entry :playlist_uploader)))
+         :channel-id (or (yt-video--string (plist-get entry :channel_id))
+                         (yt-video--string (plist-get entry :playlist_channel_id)))
          :channel-url (or (yt-video--string (plist-get entry :channel_url))
                           (yt-video--string (plist-get entry :uploader_url)))
          :duration (yt-video--number (plist-get entry :duration))

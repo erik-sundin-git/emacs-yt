@@ -71,6 +71,27 @@ The output is one JSON object per line."
         "--extractor-args" "youtubetab:approximate_date"
         "-j" "--" ":ytsubs"))
 
+(defun yt-ytdlp-channels-args ()
+  "Return arguments that list the subscribed channels as one JSON document."
+  (list "--flat-playlist" "-J" "--" "https://www.youtube.com/feed/channels"))
+
+(defun yt-ytdlp-channel-args (url limit)
+  "Return arguments that stream the first LIMIT uploads of the channel URL.
+URL is the channel's page; its videos tab is fetched.  The output is
+one JSON object per line."
+  (list "--flat-playlist" "--lazy-playlist" "-I" (format "1:%d" limit)
+        "--extractor-args" "youtubetab:approximate_date"
+        "-j" "--" (concat (string-remove-suffix "/" url) "/videos")))
+
+(defun yt-ytdlp-search-args (query limit)
+  "Return arguments that stream LIMIT search results for QUERY.
+The output is one JSON object per line."
+  (list "--flat-playlist" "-j" "--" (format "ytsearch%d:%s" limit query)))
+
+(defun yt-ytdlp-info-args (url)
+  "Return arguments that print everything about the video at URL as JSON."
+  (list "-J" "--no-playlist" "--ignore-no-formats-error" "--" url))
+
 (defun yt-ytdlp-verify-args ()
   "Return arguments that fetch three feed entries as one JSON document.
 `:ytsubs' fails when yt-dlp has no login cookies, which makes this a
@@ -149,8 +170,8 @@ For a channel URL the same message means the channel does not exist.")
 (defun yt-ytdlp-classify (stderr &optional source)
   "Return the class of the first known problem in STDERR, or nil.
 Only the ERROR: and WARNING: lines of STDERR are considered.  SOURCE
-`feed' or `verify' adds patterns that only mean an expired session
-for the subscription feed."
+`feed', `verify' or `channels' adds patterns that only mean an
+expired session for pages of the signed-in account."
   (let* ((case-fold-search t)
          (text (string-join
                 (seq-filter (lambda (line)
@@ -158,7 +179,7 @@ for the subscription feed."
                             (split-string (or stderr "") "\n"))
                 "\n"))
          (patterns (append yt-ytdlp-error-patterns
-                           (and (memq source '(feed verify))
+                           (and (memq source '(feed verify channels))
                                 yt-ytdlp--feed-patterns))))
     (car (seq-find (lambda (pattern) (string-match-p (cdr pattern) text))
                    patterns))))

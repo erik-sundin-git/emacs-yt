@@ -44,6 +44,9 @@
 (require 'yt-auth)
 (require 'yt-player)
 
+(declare-function yt-info "yt-info" (video))
+(declare-function yt-channels "yt-channels" ())
+
 ;;;; Faces
 
 (defface yt-feed-age '((t :inherit shadow))
@@ -102,7 +105,13 @@
   "Name of the subscription feed buffer.")
 
 (defvar-local yt-feed--source nil
-  "The feed this buffer shows; `subscriptions' for the subscription feed.")
+  "The feed this buffer shows.
+It is `subscriptions' for the subscription feed, (channel ID URL
+NAME) for a channel's uploads, and (search QUERY) for search
+results.")
+
+(defvar yt-search-limit 20
+  "Number of results of a search.")
 
 (defvar-local yt-feed--videos nil
   "The videos of this buffer, in feed order, before filtering.")
@@ -144,10 +153,27 @@
   "Seconds between updates of the ages shown in visible feed buffers.")
 
 (defun yt-feed--cache-source ()
-  "Return the cache key of this buffer's feed."
+  "Return the cache key of this buffer's feed, or nil if it is not kept.
+The order of search results is not kept."
   (pcase yt-feed--source
     ('subscriptions "subscriptions")
-    (source (format "%S" source))))
+    (`(channel ,id . ,_) (concat "channel:" id))))
+
+(defun yt-feed--fetch-spec ()
+  "Return how to fetch this buffer's feed, a plist.
+:args are the yt-dlp arguments, :auth-source the SOURCE for
+`yt-auth-run', :redact the arguments to keep out of logs, :approx
+whether timestamps are approximate and :stop-early whether a
+refresh may stop at cached videos."
+  (pcase yt-feed--source
+    ('subscriptions
+     (list :args (yt-ytdlp-feed-args yt-feed-limit) :auth-source 'feed
+           :approx t :stop-early t))
+    (`(channel ,_id ,url . ,_)
+     (list :args (yt-ytdlp-channel-args url yt-feed-limit) :approx t :stop-early t))
+    (`(search ,query)
+     (let ((args (yt-ytdlp-search-args query yt-search-limit)))
+       (list :args args :redact (last args))))))
 
 (defun yt-feed--process-key ()
   "Return the process key of this buffer's refresh."
@@ -476,10 +502,10 @@ Stop the timer when no feed buffer is left."
        (< (- (yt--now) yt-feed--refreshed-at) yt-feed-refresh-interval)))
 
 (defun yt-feed--load-cache ()
-  "Fill this buffer from the cache."
-  (yt-feed--set-videos (yt-cache-feed (yt-feed--cache-source)))
-  (setq yt-feed--refreshed-at
-        (yt-cache-meta (concat "refreshed:" (yt-feed--cache-source)))))
+  "Fill this buffer from the cache, if its feed is kept there."
+  (when-let* ((source (yt-feed--cache-source)))
+    (yt-feed--set-videos (yt-cache-feed source))
+    (setq yt-feed--refreshed-at (yt-cache-meta (concat "refreshed:" source)))))
 
 (defun yt-feed--start (status)
   "Start a refresh with STATUS, and return its number."
@@ -519,8 +545,14 @@ INFO is from `yt-auth-run'; FULL is non-nil for a full refresh."
              (new (seq-count (lambda (video)
                                (not (gethash (yt-video-id video) yt-feed--table)))
                              videos)))
-        (yt-feed--set-videos (yt-cache-put-feed source videos))
-        (yt-cache-set-meta (concat "refreshed:" source) now)
+        (if source
+            (progn (yt-feed--set-videos (yt-cache-put-feed source videos))
+                   (yt-cache-set-meta (concat "refreshed:" source) now))
+          (let ((index -1))
+            (dolist (video (setq videos (yt-cache-put-videos videos)))
+              (setf (yt-video-feed-index video) (cl-incf index))))
+          (yt-feed--set-videos videos)
+          (setq new nil))
         (when (and full (not (plist-get info :stopped)))
           (cl-pushnew yt-feed--source yt-feed--fully-refreshed :test #'equal))
         (setq yt-feed--refreshed-at now
@@ -528,25 +560,32 @@ INFO is from `yt-auth-run'; FULL is non-nil for a full refresh."
               yt-feed--status nil)
         (yt-feed--redisplay)
         (force-mode-line-update)
-        (message "yt: %s" (if (zerop new)
-                              "no new videos"
-                            (format "%d new video%s" new (if (= new 1) "" "s"))))))))
+        (message "yt: %s" (cond ((not new) (format "%d results" (length videos)))
+                                ((zerop new) "no new videos")
+                                (t (format "%d new video%s" new
+                                           (if (= new 1) "" "s")))))))))
 
 (defun yt-feed--fetch (full)
   "Fetch this buffer's feed; FULL non-nil means do not stop early."
   (let* ((buffer (current-buffer))
+         (spec (yt-feed--fetch-spec))
          (known yt-feed--table)
-         (stop-after (and (not full) yt-feed-stop-after-known))
+         (stop-after (and (not full) (plist-get spec :stop-early)
+                          yt-feed-stop-after-known))
+         (approx (plist-get spec :approx))
          (videos nil)
          (streak 0)
          (run (yt-feed--start nil)))
     (yt-auth-run
-     (yt-ytdlp-feed-args yt-feed-limit)
-     :parse 'ndjson :key (yt-feed--process-key) :force full :source 'feed
+     (plist-get spec :args)
+     :parse 'ndjson :key (yt-feed--process-key) :force full
+     :source (plist-get spec :auth-source) :redact (plist-get spec :redact)
      :on-line (lambda (entry)
-                (when-let* ((video (yt-video-from-json entry t)))
+                (when-let* ((video (yt-video-from-json entry approx)))
                   (push video videos)
-                  (setq streak (if (gethash (yt-video-id video) known) (1+ streak) 0))
+                  (setq streak (if (and known (gethash (yt-video-id video) known))
+                                   (1+ streak)
+                                 0))
                   (and stop-after (>= streak stop-after) 'stop)))
      :on-success (lambda (_value info)
                    (yt-feed--fetched buffer run (nreverse videos) info full))
@@ -600,66 +639,7 @@ FULL, cancel a running refresh and fetch `yt-feed-limit' videos."
   "Cancel this buffer's refresh."
   (yt-process-cancel (yt-feed--process-key)))
 
-;;;; Commands on videos
-
-(defun yt-feed--selected-videos ()
-  "Return the videos in the region, or the video at point.
-Signal a `user-error' if there is none."
-  (or (if (use-region-p)
-          (let ((end (region-end))
-                videos)
-            (save-excursion
-              (goto-char (region-beginning))
-              (while (and (< (point) end) (not (eobp)))
-                (when-let* ((video (yt-feed-video-at-point)))
-                  (push video videos))
-                (forward-line 1)))
-            (nreverse videos))
-        (ensure-list (yt-feed-video-at-point)))
-      (user-error "No video here")))
-
-(defun yt-feed--mark (unwatched)
-  "Mark the selected videos as watched, or not if UNWATCHED is non-nil.
-Without a region, move to the next row."
-  (let* ((region (use-region-p))
-         (videos (yt-feed--selected-videos))
-         (id (yt-video-id (car videos))))
-    (yt-mark-watched videos unwatched)
-    (if region
-        (deactivate-mark)
-      (when (equal (tabulated-list-get-id) id)
-        (forward-line 1)))))
-
-(defun yt-mark-video-watched ()
-  "Mark the video at point, or the videos in the region, as watched."
-  (interactive nil yt-feed-mode)
-  (yt-feed--mark nil))
-
-(defun yt-mark-video-unwatched ()
-  "Mark the video at point, or the videos in the region, as not watched."
-  (interactive nil yt-feed-mode)
-  (yt-feed--mark t))
-
-(defun yt-browse-video ()
-  "Open the video at point in a web browser."
-  (interactive nil yt-feed-mode)
-  (browse-url (yt-video-url (car (yt-feed--selected-videos)))))
-
-(defun yt-copy-video-url ()
-  "Copy the URL of the video at point to the kill ring."
-  (interactive nil yt-feed-mode)
-  (let ((url (yt-video-url (car (yt-feed--selected-videos)))))
-    (kill-new url)
-    (message "Copied %s" url)))
-
-(defun yt-copy-video-title-and-url ()
-  "Copy \"Title — URL\" of the video at point to the kill ring."
-  (interactive nil yt-feed-mode)
-  (let* ((video (car (yt-feed--selected-videos)))
-         (text (format "%s — %s" (or (yt-video-title video) (yt-video-id video))
-                       (yt-video-url video))))
-    (kill-new text)
-    (message "Copied %s" text)))
+;;;; Commands on the feed
 
 (defun yt-feed-mark-all-watched ()
   "Mark every video shown in the feed as watched."
@@ -767,19 +747,6 @@ to the channel of the video at point."
 
 ;;;; Mode
 
-(defvar-keymap yt-video-actions-map
-  :doc "Keys acting on the video at point, shared by yt buffers."
-  "RET" #'yt-play
-  "v" #'yt-play-vlc
-  "m" #'yt-play-mpv
-  "a" #'yt-enqueue
-  "P" yt-player-map
-  "w" #'yt-mark-video-watched
-  "u" #'yt-mark-video-unwatched
-  "b" #'yt-browse-video
-  "y" #'yt-copy-video-url
-  "Y" #'yt-copy-video-title-and-url)
-
 (defvar-keymap yt-feed-toggle-map
   :doc "Keys toggling what the feed hides."
   "w" #'yt-feed-toggle-hide-watched
@@ -796,6 +763,7 @@ to the channel of the video at point."
   "c" #'yt-feed-filter-channel
   "C" #'yt-feed-clear-filters
   "t" (cons "toggle" yt-feed-toggle-map)
+  "l" #'yt-channels
   "L" #'yt-login)
 
 (define-derived-mode yt-feed-mode tabulated-list-mode "yt"
@@ -823,6 +791,7 @@ the feed was updated, the active filters and the number of videos.
                                     :hide-upcoming yt-feed-hide-upcoming))
   (setq-local revert-buffer-function #'yt-feed--revert)
   (setq-local yt-video-at-point-function #'yt-feed-video-at-point)
+  (yt-feed--set-videos nil)
   (add-hook 'kill-buffer-hook #'yt-feed--cancel nil t)
   (add-hook 'yt-watched-changed-functions #'yt-feed--watched-changed)
   (add-hook 'yt-auth-state-change-hook #'yt-feed--auth-changed)
@@ -832,24 +801,60 @@ the feed was updated, the active filters and the number of videos.
                                              #'yt-feed--update-ages)))
   (tabulated-list-init-header))
 
-;;;###autoload
-(defun yt-feed-subscriptions ()
-  "Show the subscription feed, from the cache at first, then refreshed.
+(defun yt-feed--show (source name)
+  "Show the feed SOURCE in the buffer NAME, from the cache, then refreshed.
 The feed is not refreshed if that happened less than
-`yt-feed-refresh-interval' seconds ago."
-  (interactive)
-  (let ((buffer (get-buffer yt-feed-subscriptions-buffer)))
-    (unless buffer
-      (setq buffer (get-buffer-create yt-feed-subscriptions-buffer))
+`yt-feed-refresh-interval' seconds ago.  Return the buffer."
+  (let ((buffer (get-buffer name)))
+    (unless (and buffer (equal (buffer-local-value 'yt-feed--source buffer) source))
+      (setq buffer (get-buffer-create name))
       (with-current-buffer buffer
         (yt-feed-mode)
-        (setq yt-feed--source 'subscriptions)
+        (setq yt-feed--source source)
         (yt-feed--load-cache)
         (yt-feed--redisplay)))
     (pop-to-buffer-same-window buffer)
     (unless (or yt-feed--refreshing (yt-feed--fresh-p))
       (yt-feed-refresh))
     buffer))
+
+;;;###autoload
+(defun yt-feed-subscriptions ()
+  "Show the subscription feed, from the cache at first, then refreshed.
+The feed is not refreshed if that happened less than
+`yt-feed-refresh-interval' seconds ago."
+  (interactive)
+  (yt-feed--show 'subscriptions yt-feed-subscriptions-buffer))
+
+;;;###autoload
+(defun yt-feed-channel (id url name)
+  "Show the uploads of the channel NAME with ID and page URL.
+Like the subscription feed, they show from the cache at first."
+  (yt-feed--show (list 'channel id url name) (format "*yt: %s*" name)))
+
+(defun yt-feed-open-channel (video)
+  "Show the uploads of the channel of VIDEO.
+Interactively, use the video at point."
+  (interactive (list (or (yt-video-at-point) (user-error "No video here"))))
+  (let ((id (yt-video-channel-id video))
+        (url (yt-video-channel-url video)))
+    (unless (or id url)
+      (user-error "The channel of this video is not known"))
+    (yt-feed-channel (or id url)
+                     (if id (format "https://www.youtube.com/channel/%s" id) url)
+                     (or (yt-video-channel video) id))))
+
+(defvar yt-search-history nil
+  "History of `yt-search' queries.")
+
+;;;###autoload
+(defun yt-search (query)
+  "Search YouTube for QUERY and list the results."
+  (interactive (list (read-string "Search YouTube: " nil 'yt-search-history)))
+  (when (string-blank-p query)
+    (user-error "Nothing to search for"))
+  (yt-feed--show (list 'search (string-trim query))
+                 (format "*yt: Search: %s*" (string-trim query))))
 
 (provide 'yt-feed)
 ;;; yt-feed.el ends here
