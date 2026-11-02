@@ -2,6 +2,18 @@
 
 * Unreleased
 ** After M7
+- Thumbnails are larger, 90 pixels high instead of 54, and
+  =yt-thumbs-height= is now a user option.
+- Subscribing: =+= in a channel's uploads, the subscription feed or search
+  results subscribes to the channel at hand, and =-= unsubscribes (=-= or
+  =d= in the channels list too); =M-x yt-subscribe= and =yt-unsubscribe=
+  do the same.  yt-dlp only reads, so =yt-subscribe.el= sends the request
+  of youtube.com's Subscribe button itself, with curl, a private cookie
+  copy and a SAPISIDHASH header, all passed in a mode 0600 config file
+  rather than on the command line.  When YouTube refuses, yt offers to
+  open the channel in its Chromium profile (=yt-chromium-program=).  The
+  channels list, the header line of a channel's uploads ("subscribed")
+  and the subscription feed follow at once.
 - Shuffle: =z= in a feed or playlist buffer (or on a playlist in a
   playlists list) plays the videos shown in random order in mpv, keeping
   two queued and fetching the next as each starts.  =C-c y z= shuffles

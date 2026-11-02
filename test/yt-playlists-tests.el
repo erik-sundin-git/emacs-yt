@@ -97,7 +97,7 @@
       (should (equal (car (last (yt-test-argv ytdlp 2)))
                      "https://www.youtube.com/playlist?list=PLfakeplaylist000000000001"))
       (should (string-match-p "saves this playlist" (yt-feed--header-line)))
-      (should (eq (keymap-lookup yt-feed-mode-map "+") #'yt-feed-save-playlist))
+      (should (eq (keymap-lookup yt-feed-mode-map "+") #'yt-feed-add))
       (yt-feed-save-playlist)
       (should (string-match-p "saved playlist" (yt-feed--header-line)))
       (should (equal (car (yt-cache-saved-playlists))
@@ -184,13 +184,13 @@
       (let* ((video (yt-video--make :id "x" :channel "Fake Channel Two"
                                     :channel-id "UCfakechannel00000000002"))
              (yt-video-at-point-function (lambda () video)))
-        (should (equal (yt-playlists--channel-at-point) yt-playlists-test--channel))))
+        (should (equal (yt-channel-at-point) yt-playlists-test--channel))))
     (with-temp-buffer
       (yt-feed-mode)
       (setq yt-feed--source (cons 'channel yt-playlists-test--channel))
-      (should (equal (yt-playlists--channel-at-point) yt-playlists-test--channel)))
+      (should (equal (yt-channel-at-point) yt-playlists-test--channel)))
     (with-temp-buffer
-      (should-error (yt-playlists--channel-at-point) :type 'user-error))))
+      (should-error (yt-channel-at-point) :type 'user-error))))
 
 (provide 'yt-playlists-tests)
 ;;; yt-playlists-tests.el ends here

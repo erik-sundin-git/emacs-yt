@@ -46,6 +46,11 @@ Older videos drop out of the feed but keep their watched state.")
 Each function is called with a list of video ids and the new state,
 non-nil for watched.")
 
+(defvar yt-subscriptions-changed-functions nil
+  "Abnormal hook run after you subscribed to a channel or unsubscribed.
+Each function is called with the channel, a plist with :id, :name
+and :url, and non-nil if you are now subscribed.")
+
 (defvar yt-cache--db nil
   "The open cache database, or nil.")
 
@@ -325,6 +330,34 @@ Only the properties in `yt-cache--channel-fields' are stored."
                  (cl-loop for key in yt-cache--channel-fields
                           append (list key (plist-get channel key)))))))))
     channels))
+
+(defun yt-cache-subscribed-p (id)
+  "Return non-nil if the channel ID is among the cached subscribed channels."
+  (and (sqlite-select (yt-cache-db) "SELECT 1 FROM channels WHERE id = ?" (list id))
+       t))
+
+(defun yt-cache-add-channel (channel)
+  "Add CHANNEL, a plist, first among the cached subscribed channels.
+Then run `yt-subscriptions-changed-functions'."
+  (let ((id (plist-get channel :id)))
+    (yt-cache-put-channels
+     (cons channel (seq-remove (lambda (c) (equal (plist-get c :id) id))
+                               (yt-cache-channels)))))
+  (run-hook-with-args 'yt-subscriptions-changed-functions channel t))
+
+(defun yt-cache-remove-channel (channel)
+  "Remove CHANNEL, a plist, from the cached subscribed channels.
+Its videos leave the cached subscription feed too.  Then run
+`yt-subscriptions-changed-functions'."
+  (let ((db (yt-cache-db))
+        (id (plist-get channel :id)))
+    (yt-cache--with-transaction db
+      (sqlite-execute db "DELETE FROM channels WHERE id = ?" (list id))
+      (dolist (video (yt-cache-feed "subscriptions"))
+        (when (equal (yt-video-channel-id video) id)
+          (sqlite-execute db "DELETE FROM feed WHERE source = ? AND id = ?"
+                          (list "subscriptions" (yt-video-id video)))))))
+  (run-hook-with-args 'yt-subscriptions-changed-functions channel nil))
 
 (defun yt-cache--prune-plist (plist)
   "Return PLIST without the properties whose value is nil."

@@ -175,6 +175,14 @@ the yt-dlp program."
   :group 'yt-backend
   :package-version '(yt . "0.1.0"))
 
+(defcustom yt-chromium-program "chromium"
+  "Name or file name of the Chromium program.
+yt opens a channel in the Chromium profile it signs in with when it
+cannot subscribe to the channel itself."
+  :type 'string
+  :group 'yt-backend
+  :package-version '(yt . "0.1.0"))
+
 (defcustom yt-cookie-profile nil
   "Chromium profile directory that yt reads YouTube cookies from.
 nil means the profile chosen with \\[yt-login], which yt remembers
@@ -238,7 +246,9 @@ into the \"yt/thumbs\" directory of `xdg-cache-home'."
   :package-version '(yt . "0.1.0"))
 
 (defcustom yt-curl-program "curl"
-  "Name or file name of the curl program, which downloads thumbnails."
+  "Name or file name of the curl program.
+It downloads thumbnails, and sends the requests that subscribe to
+channels and unsubscribe from them."
   :type 'string
   :group 'yt-feed
   :package-version '(yt . "0.1.0"))

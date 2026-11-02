@@ -33,8 +33,13 @@
 (require 'yt)
 (require 'yt-process)
 
-(defvar yt-thumbs-height 54
-  "Height of thumbnails in pixels.")
+(defcustom yt-thumbs-height 90
+  "Height of the thumbnails in the feed, in pixels.
+The images YouTube serves are 180 pixels high; larger thumbnails
+are scaled up.  A change shows in feed buffers after \\`t i' twice."
+  :type 'natnum
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
 
 (defvar yt-thumbs-changed-functions nil
   "Abnormal hook run with a video id when its thumbnail was downloaded.")

@@ -274,31 +274,12 @@ A channel's playlists are fetched when the buffer is new."
   (interactive)
   (yt-playlists--show 'saved yt-saved-playlists-buffer))
 
-(defun yt-playlists--channel-at-point ()
-  "Return (ID URL NAME) of the channel at hand, or signal a `user-error'.
-That is the channel of the video at point, the channel whose uploads
-this buffer shows, or the channel at point in the channels list."
-  (or (when-let* ((video (yt-video-at-point))
-                  (id (or (yt-video-channel-id video) (yt-video-channel-url video))))
-        (list id (if (yt-video-channel-id video)
-                     (format "https://www.youtube.com/channel/%s" id)
-                   (yt-video-channel-url video))
-              (or (yt-video-channel video) id)))
-      (pcase (bound-and-true-p yt-feed--source)
-        (`(channel ,id ,url ,name) (list id url name)))
-      (when (and (derived-mode-p 'yt-channels-mode) (fboundp 'yt-channels--at-point))
-        (let ((channel (yt-channels--at-point)))
-          (list (plist-get channel :id) (plist-get channel :url) (plist-get channel :name))))
-      (user-error "No channel here")))
-
-(declare-function yt-channels--at-point "yt-channels" ())
-
 ;;;###autoload
 (defun yt-channel-playlists (id url name)
   "List the playlists created by the channel NAME with ID and page URL.
 Interactively, use the channel of the video at point, of the
 channel buffer, or at point in the channels list."
-  (interactive (yt-playlists--channel-at-point))
+  (interactive (yt-channel-at-point))
   (yt-playlists--show (list 'channel id url name) (format "*yt: %s playlists*" name)))
 
 (provide 'yt-playlists)

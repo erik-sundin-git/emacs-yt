@@ -10,8 +10,8 @@ fetches everything with yt-dlp.  It uses no OAuth and no API key.
 - =RET= plays in mpv, which Emacs controls (pause, seek, speed, playlist,
   now-playing in the mode line, resume where you stopped).  =v= streams to
   VLC instead.
-- Channels, channel uploads, the playlists a channel made (and saving them
-  in yt), search, video details with chapters, watched marks, filters,
+- Channels, channel uploads, subscribing and unsubscribing, the playlists a
+  channel made (and saving them in yt), search, video details with chapters, watched marks, filters,
   thumbnails, completion and embark actions.
 
 * Requirements
@@ -121,15 +121,22 @@ the info and playlist buffers):
 | =t w=, =t s=, =t u= | hide watched videos, Shorts, upcoming streams      |
 | =t i=         | thumbnails                                               |
 | =l=           | the channels                                             |
-| =+= / =-=     | in a playlist: save it in yt / forget it                 |
+| =+= / =-=     | subscribe to / unsubscribe from the channel at hand; in a playlist: save it in yt / forget it |
 | =z=           | play the videos shown in random order, in mpv            |
 | =L=           | sign in                                                  |
 | =S=           | sort by the column at point (tabulated-list)             |
 
-In the channels list, =o= shows a channel's uploads and =O= its playlists.
+In the channels list, =o= shows a channel's uploads, =O= its playlists, and
+=-= or =d= unsubscribes from it.
 A channel's playlists, and the saved ones (=C-c y P=), open with =RET= in
 playlist order; =+= saves the playlist at point, =-= or =d= forgets it, =z=
 shuffles it, and =b= opens it in a browser.
+
+The channel at hand is the channel of the video at point, or the channel
+whose uploads the buffer shows; its header line says whether you subscribe
+to it.  Unsubscribing asks first, and removes the channel's videos from the
+subscription feed.  If YouTube refuses the request, yt offers to open the
+channel in its Chromium profile, to click Subscribe there.
 
 Shuffling plays one video at once and keeps two more queued in mpv; each
 time one starts, the next is fetched, so a long playlist does not send
@@ -171,6 +178,7 @@ on the display of the selected frame.
 - =yt-feed-limit=, =yt-feed-refresh-interval=: how much to fetch, how often
 - =yt-feed-hide-watched=, =yt-feed-hide-shorts=, =yt-feed-hide-upcoming=,
   =yt-feed-thumbnails=: the feed's defaults
+- =yt-thumbs-height=: the height of thumbnails, by default 90 pixels
 - =yt-cookie-profile=: the Chromium profile, instead of choosing it with
   =yt-login=
 
@@ -178,11 +186,15 @@ on the display of the selected frame.
 - *Network:* yt-dlp talks to www.youtube.com (pages, the API the pages use,
   and the player script, run locally by its JavaScript runtime).  Players
   fetch the video streams from googlevideo.com.  Thumbnails come from
-  i.ytimg.com, through curl, without cookies.  There is no telemetry and no
-  self-update.
+  i.ytimg.com, through curl, without cookies.  Subscribing and
+  unsubscribing send one request to www.youtube.com through curl, with the
+  cookies.  There is no telemetry and no self-update.
 - *Cookies:* only those of the chosen profile, only for youtube.com, in a
   mode 0600 file under =~/.local/state/yt/=.  Every yt-dlp run gets its own
-  private copy in =$XDG_RUNTIME_DIR/yt/=, deleted afterwards.  Cookie values
+  private copy in =$XDG_RUNTIME_DIR/yt/=, deleted afterwards; so does curl
+  when it subscribes, along with a mode 0600 config file holding the
+  request's headers, so nothing derived from the cookies is in the process
+  list.  Cookie values
   are never logged or shown.  =M-x yt-logout= deletes the files; signing out
   of YouTube in the profile ends the session itself.
 - *Local data:* the watch history and resume positions are in a mode 0600
@@ -207,6 +219,10 @@ on the display of the selected frame.
   YouTube releases streams only a few seconds after yt-dlp asks for them.
 - Stream URLs expire after some hours; a queued video that fails is
   resolved again, once.
+- Subscribing uses YouTube's internal API, which is not documented, the
+  way the website's Subscribe button does; it can break when YouTube
+  changes, independently of yt-dlp.  Then the Chromium fallback still
+  works.
 - Everything depends on yt-dlp keeping up with YouTube: update it when
   =yt-doctor= says it is old, or when fetching suddenly fails.
 

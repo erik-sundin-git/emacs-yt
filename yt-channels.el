@@ -22,8 +22,9 @@
 
 ;; `yt-channels' lists the channels you subscribe to, with the number
 ;; of their videos in the subscription feed you have not watched and
-;; when they last uploaded one.  RET shows a channel's uploads.  The
-;; list is cached and fetched again when it is a day old, or with g.
+;; when they last uploaded one.  RET shows a channel's uploads, and -
+;; unsubscribes from it.  The list is cached and fetched again when it
+;; is a day old, or with g.
 
 ;;; Code:
 
@@ -38,6 +39,7 @@
 (require 'yt-feed)
 
 (declare-function yt-channel-playlists "yt-playlists" (id url name))
+(declare-function yt-unsubscribe "yt-subscribe" (id url name &optional confirm))
 
 (defconst yt-channels-buffer "*yt: Channels*"
   "Name of the channels buffer.")
@@ -204,6 +206,21 @@ They are computed from the cached subscription feed."
   (interactive (list (yt-channels--at-point)) yt-channels-mode)
   (browse-url (plist-get channel :url)))
 
+(defun yt-channels-unsubscribe (channel)
+  "Unsubscribe from CHANNEL, the channel at point, after confirmation."
+  (interactive (list (yt-channels--at-point)) yt-channels-mode)
+  (require 'yt-subscribe)
+  (yt-unsubscribe (plist-get channel :id) (plist-get channel :url)
+                  (plist-get channel :name) t))
+
+(defun yt-channels--subscriptions-changed (_channel _subscribed)
+  "Show the cached channels again in the channels buffer."
+  (when-let* ((buffer (get-buffer yt-channels-buffer)))
+    (with-current-buffer buffer
+      (when (derived-mode-p 'yt-channels-mode)
+        (setq yt-channels--channels (yt-cache-channels))
+        (yt-channels--print)))))
+
 (defun yt-channels-filter (query)
   "Show only the channels with QUERY in their name.
 An empty QUERY shows all channels."
@@ -219,6 +236,8 @@ An empty QUERY shows all channels."
   "o" #'yt-channels-open
   "O" #'yt-channel-playlists
   "b" #'yt-channels-browse
+  "-" #'yt-channels-unsubscribe
+  "d" #'yt-channels-unsubscribe
   "/" #'yt-channels-filter
   "s" #'yt-channels-filter
   "g" #'yt-channels-refresh
@@ -242,6 +261,7 @@ have not watched.
         header-line-format '(:eval (yt-channels--header-line)))
   (setq-local revert-buffer-function (lambda (&rest _) (yt-channels-refresh)))
   (add-hook 'kill-buffer-hook (lambda () (yt-process-cancel '(yt-channels . list))) nil t)
+  (add-hook 'yt-subscriptions-changed-functions #'yt-channels--subscriptions-changed)
   (tabulated-list-init-header))
 
 ;;;###autoload

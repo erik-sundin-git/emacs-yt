@@ -48,6 +48,9 @@
 (declare-function yt-info "yt-info" (video))
 (declare-function yt-channels "yt-channels" ())
 (declare-function yt-saved-playlists "yt-playlists" ())
+(declare-function yt-channels--at-point "yt-channels" ())
+(declare-function yt-subscribe "yt-subscribe" (id url name))
+(declare-function yt-unsubscribe "yt-subscribe" (id url name &optional confirm))
 
 ;;;; Faces
 
@@ -471,6 +474,26 @@ filtered out is replaced by its nearest neighbour."
               (yt-feed--redisplay)
             (yt-feed--redraw-rows ids)))))))
 
+(defun yt-feed--subscriptions-changed (channel subscribed)
+  "Update the feed buffers after a change of subscription to CHANNEL.
+SUBSCRIBED is non-nil if you are now subscribed.  After
+unsubscribing, the channel's videos leave the subscription feed.
+After subscribing, the next refresh fetches the whole feed, since
+the channel's videos are older than those already cached."
+  (if subscribed
+      (setq yt-feed--fully-refreshed (delete 'subscriptions yt-feed--fully-refreshed))
+    (dolist (buffer (yt-feed--buffers))
+      (with-current-buffer buffer
+        (when (eq yt-feed--source 'subscriptions)
+          (yt-feed--set-videos
+           (seq-remove (lambda (video)
+                         (equal (yt-video-channel-id video) (plist-get channel :id)))
+                       yt-feed--videos))
+          (yt-feed--redisplay)))))
+  (dolist (buffer (yt-feed--buffers))
+    (with-current-buffer buffer
+      (force-mode-line-update))))
+
 (defun yt-feed--auth-changed ()
   "Update the header lines of the feed buffers."
   (dolist (buffer (yt-feed--buffers))
@@ -515,10 +538,17 @@ Stop the timer when no feed buffer is left."
                             'face 'warning 'mouse-face 'header-line-highlight
                             'keymap yt-feed--sign-in-map
                             'help-echo "mouse-1: sign in to YouTube"))
-           (when-let* ((id (yt-feed--playlist-id)))
-             (if (yt-cache-playlist-saved-p id)
-                 (propertize "saved playlist" 'face 'success)
-               (substitute-command-keys "\\<yt-feed-mode-map>\\[yt-feed-save-playlist] saves this playlist")))
+           (pcase yt-feed--source
+             (`(playlist ,id . ,_)
+              (if (yt-cache-playlist-saved-p id)
+                  (propertize "saved playlist" 'face 'success)
+                (substitute-command-keys "\\<yt-feed-mode-map>\\[yt-feed-add] saves this playlist")))
+             (`(channel ,id . ,_)
+              ;; Known only once the channel list was fetched.
+              (when (yt-cache-meta "refreshed:channels")
+                (if (yt-cache-subscribed-p id)
+                    (propertize "subscribed" 'face 'success)
+                  (substitute-command-keys "\\<yt-feed-mode-map>\\[yt-feed-add] subscribes")))))
            (cond (yt-feed--status (propertize yt-feed--status 'face 'shadow))
                  (yt-feed--error (propertize yt-feed--error 'face 'warning)))
            (if yt-feed--refreshed-at
@@ -808,8 +838,8 @@ to the channel of the video at point."
   "t" (cons "toggle" yt-feed-toggle-map)
   "l" #'yt-channels
   "z" #'yt-feed-shuffle
-  "+" #'yt-feed-save-playlist
-  "-" #'yt-feed-forget-playlist
+  "+" #'yt-feed-add
+  "-" #'yt-feed-remove
   "L" #'yt-login)
 
 (defconst yt-feed--format
@@ -905,6 +935,7 @@ the feed was updated, the active filters and the number of videos.
   (add-hook 'kill-buffer-hook #'yt-feed--cancel nil t)
   (add-hook 'yt-watched-changed-functions #'yt-feed--watched-changed)
   (add-hook 'yt-auth-state-change-hook #'yt-feed--auth-changed)
+  (add-hook 'yt-subscriptions-changed-functions #'yt-feed--subscriptions-changed)
   (unless (memq yt-feed--age-timer timer-list)
     (setq yt-feed--age-timer (run-with-timer yt-feed-age-update-interval
                                              yt-feed-age-update-interval
@@ -954,6 +985,23 @@ Interactively, use the video at point."
                      (if id (format "https://www.youtube.com/channel/%s" id) url)
                      (or (yt-video-channel video) id))))
 
+(defun yt-channel-at-point ()
+  "Return (ID URL NAME) of the channel at hand, or signal a `user-error'.
+That is the channel of the video at point, the channel whose uploads
+this buffer shows, or the channel at point in the channels list."
+  (or (when-let* ((video (yt-video-at-point))
+                  (id (or (yt-video-channel-id video) (yt-video-channel-url video))))
+        (list id (if (yt-video-channel-id video)
+                     (format "https://www.youtube.com/channel/%s" id)
+                   (yt-video-channel-url video))
+              (or (yt-video-channel video) id)))
+      (pcase (bound-and-true-p yt-feed--source)
+        (`(channel ,id ,url ,name) (list id url name)))
+      (when (and (derived-mode-p 'yt-channels-mode) (fboundp 'yt-channels--at-point))
+        (let ((channel (yt-channels--at-point)))
+          (list (plist-get channel :id) (plist-get channel :url) (plist-get channel :name))))
+      (user-error "No channel here")))
+
 (defun yt-feed-playlist (id url title)
   "Show the videos of the playlist TITLE with ID and URL, in its order."
   (yt-feed--show (list 'playlist id url title) (format "*yt: Playlist: %s*" title)))
@@ -990,6 +1038,29 @@ Interactively, use the video at point."
     (force-mode-line-update)
     (message "Removed the playlist “%s” from the saved playlists"
              (plist-get playlist :title))))
+
+(defun yt-feed-add ()
+  "Save this playlist, or subscribe to the channel at hand.
+In a playlist, save it, as \\[yt-feed-save-playlist] does.
+Elsewhere, subscribe to the channel of the video at point, or to
+the channel whose uploads this buffer shows; see `yt-subscribe'."
+  (interactive nil yt-feed-mode)
+  (if (yt-feed--playlist-id)
+      (yt-feed-save-playlist)
+    (require 'yt-subscribe)
+    (apply #'yt-subscribe (yt-channel-at-point))))
+
+(defun yt-feed-remove ()
+  "Forget this playlist, or unsubscribe from the channel at hand.
+In a playlist, remove it from the saved playlists, as
+\\[yt-feed-forget-playlist] does.  Elsewhere, unsubscribe from the
+channel of the video at point, or from the channel whose uploads
+this buffer shows, after confirmation; see `yt-unsubscribe'."
+  (interactive nil yt-feed-mode)
+  (if (yt-feed--playlist-id)
+      (yt-feed-forget-playlist)
+    (require 'yt-subscribe)
+    (apply #'yt-unsubscribe (append (yt-channel-at-point) '(t)))))
 
 (defun yt-feed-shuffle ()
   "Play the videos shown in this buffer in random order in mpv.
