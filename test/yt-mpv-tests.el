@@ -428,6 +428,15 @@ A sleeping process stands in for mpv."
       (yt-test-wait-until (lambda () (yt-video-watched (yt-cache-get "videostart1")))
                           "watched at start"))))
 
+(ert-deftest yt-mpv-start-adds-to-history ()
+  "A video that starts in mpv goes into yt's history."
+  (yt-mpv-test--with-mpv (_ytdlp _mpv)
+    (let* ((server (yt-mpv-test--connect))
+           (video (yt-mpv-test--video "videohist01")))
+      (yt-mpv-test--play-through server (yt-mpv-test--load server video))
+      (yt-test-wait-until (lambda () (yt-cache-history)) "history")
+      (should (equal (yt-video-id (car (car (yt-cache-history)))) "videohist01")))))
+
 ;;;; The whole path
 
 (ert-deftest yt-mpv-play-starts-mpv-and-cleans-up ()

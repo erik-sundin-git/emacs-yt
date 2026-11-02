@@ -102,6 +102,12 @@ The output is one JSON object per line."
   "Return arguments that print everything about the video at URL as JSON."
   (list "-J" "--no-playlist" "--ignore-no-formats-error" "--" url))
 
+(defun yt-ytdlp-mark-watched-args (url)
+  "Return arguments that add the video at URL to the YouTube history.
+Nothing is downloaded or printed; yt-dlp warns if it could not."
+  (list "--no-playlist" "--mark-watched" "--simulate" "--ignore-no-formats-error"
+        "--" url))
+
 (defun yt-ytdlp-verify-args ()
   "Return arguments that fetch three feed entries as one JSON document.
 `:ytsubs' fails when yt-dlp has no login cookies, which makes this a

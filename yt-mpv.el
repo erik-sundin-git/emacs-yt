@@ -388,12 +388,12 @@ seeking to its end would gain nothing."
 
 (defun yt-mpv--mark-started (entry)
   "Note that the video of ENTRY started.
-Mark it watched if videos count when they start, and run
-`yt-player-file-started-functions'."
+Mark it watched if videos count when they start; see
+`yt-player-started'."
   (when-let* ((video (yt-mpv--entry-video entry)))
     (when (and (eq yt-mark-watched-when 'start) (yt-video-id video))
       (yt-mark-watched video))
-    (run-hook-with-args 'yt-player-file-started-functions video)))
+    (yt-player-started video)))
 
 (defun yt-mpv--start-file (id)
   "Handle the start of playlist entry ID."

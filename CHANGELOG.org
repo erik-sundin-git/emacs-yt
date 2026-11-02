@@ -2,6 +2,12 @@
 
 * Unreleased
 ** After M7
+- History: =C-c y h= lists the videos you played, newest first, with when
+  and how far (=yt-history.el=); =d= removes, =D= clears, =/= filters.  The
+  cache schema is now version 4, with a history table.  Both players call
+  the new =yt-player-started=, which records the video.
+- =yt-player-youtube-history= (off by default) adds each video you play to
+  your YouTube history with yt-dlp's =--mark-watched=, once per session.
 - SponsorBlock: mpv skips sponsor, self-promotion and interaction-reminder
   segments (=yt-sponsorblock-categories=), and says so; =C-c y U= undoes
   the last skip and =C-c y K= turns skipping off or on.  =yt-sponsorblock.el=

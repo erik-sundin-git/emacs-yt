@@ -84,6 +84,7 @@ try again; yt waits 15 minutes before sending more requests.
 | =y= or =RET=   | the subscription feed, yt's main view        |
 | =c=            | the channels you subscribe to                |
 | =P=            | the playlists you saved                      |
+| =h=            | the videos you played (history)              |
 | =s=            | search YouTube                               |
 | =f=            | choose a feed video with completion, play it |
 | =u=            | play a YouTube URL                           |
@@ -150,6 +151,20 @@ With embark, =embark-act= on a video (a completion candidate or the row at
 point) offers the same keys.  With marginalia, completion candidates show
 their channel, age and duration.
 
+* History
+=C-c y h= lists the videos you played in yt, the most recently played
+first, with how long ago you played them and how far you got: where you
+stopped, or "watched".  =RET= plays a video again, from where you stopped,
+and the other video keys work too.  =d= removes the videos in the region or
+at point, =D= clears the list, and =/= filters it by title or channel.
+Removing a video keeps its watched mark and resume position.
+
+The history stays in yt's cache.  With =yt-player-youtube-history= set, yt
+also adds each video you play to your YouTube history, as yt-dlp's
+=--mark-watched= does, so it shows on your other devices.  YouTube then
+counts the video as watched to the end, and uses it for recommendations.
+A video is sent once per session; problems go to =C-c y !=.
+
 * SponsorBlock
 mpv skips the segments of videos that [[https://sponsor.ajay.app][SponsorBlock]]'s community marked as
 sponsors, self-promotion or reminders to subscribe, and says so in the echo
@@ -196,6 +211,8 @@ on the display of the selected frame.
   =yt-feed-thumbnails=: the feed's defaults
 - =yt-thumbs-height=: the height of thumbnails, by default 90 pixels
 - =yt-sponsorblock-categories=: the SponsorBlock segments mpv skips
+- =yt-player-youtube-history=: add the videos you play to your YouTube
+  history
 - =yt-cookie-profile=: the Chromium profile, instead of choosing it with
   =yt-login=
 
@@ -205,7 +222,8 @@ on the display of the selected frame.
   fetch the video streams from googlevideo.com.  Thumbnails come from
   i.ytimg.com, through curl, without cookies.  Subscribing and
   unsubscribing send one request to www.youtube.com through curl, with the
-  cookies.  Before mpv plays a video, and when its details are shown, curl
+  cookies.  With =yt-player-youtube-history= set, yt-dlp also tells
+  YouTube about each video you play.  Before mpv plays a video, and when its details are shown, curl
   asks sponsor.ajay.app for SponsorBlock segments, without cookies, naming
   only the first 4 characters of the SHA-256 hash of the video id, which
   many videos share.  There is no telemetry and no self-update.
@@ -217,8 +235,9 @@ on the display of the selected frame.
   list.  Cookie values
   are never logged or shown.  =M-x yt-logout= deletes the files; signing out
   of YouTube in the profile ends the session itself.
-- *Local data:* the watch history and resume positions are in a mode 0600
-  SQLite file next to the cookies; =M-x yt-forget-history= clears them.
+- *Local data:* the videos you played, watched marks and resume positions
+  are in a mode 0600 SQLite file next to the cookies;
+  =M-x yt-forget-history= clears them all.
   Only a fixed set of video fields is stored, never yt-dlp's raw output,
   which holds stream URLs signed for your IP address.
 - *Logs:* =*yt-log*= lists the commands yt runs, with search queries

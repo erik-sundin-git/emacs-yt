@@ -429,6 +429,7 @@ has a short label, which which-key shows."
   "y" '("subscriptions" . yt)
   "RET" '("subscriptions" . yt)
   "c" '("channels" . yt-channels)
+  "h" '("history" . yt-history)
   "P" '("saved playlists" . yt-saved-playlists)
   "s" '("search" . yt-search)
   "f" '("find video" . yt-select-play)

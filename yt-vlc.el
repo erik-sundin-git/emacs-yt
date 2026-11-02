@@ -98,6 +98,7 @@ A running VLC is closed first.  VIDEO is marked watched."
                         :sentinel #'yt-vlc--sentinel))
     (when (yt-video-id video)
       (yt-mark-watched video))
+    (yt-player-started video)
     (message "Playing “%s” in VLC" (yt-player--title video))))
 
 (cl-defmethod yt-player-backend-stop ((_backend (eql 'vlc)))

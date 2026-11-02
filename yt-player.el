@@ -97,6 +97,20 @@ The playlist is a list of plists with :index (from 0), :id, :title,
 (defvar yt-player-file-started-functions nil
   "Abnormal hook run with the `yt-video' a backend started to play.")
 
+(defcustom yt-player-youtube-history nil
+  "Non-nil means the videos you play in yt are added to your YouTube history.
+When a video starts, yt-dlp tells YouTube you watched it, as its
+--mark-watched option does.  YouTube then counts the video as
+watched to the end, shows it in your history on every device, and
+uses it for recommendations.  yt's own history, \[yt-history],
+does not depend on this."
+  :type 'boolean
+  :group 'yt-player
+  :package-version '(yt . "0.1.0"))
+
+(defvar yt-player--youtube-history-sent (make-hash-table :test #'equal)
+  "Ids of the videos added to the YouTube history in this session.")
+
 (defvar yt-player-resolve-failed-functions nil
   "Abnormal hook run with a `yt-video' whose streams could not be resolved.")
 
@@ -219,6 +233,39 @@ replaces a waiting one, unless either is INDEPENDENT."
                                      '(nil parse exit extractor format))
                                "; \\[yt-player-show-log] shows details"
                              ""))))))
+
+(defun yt-player--add-to-youtube-history (video)
+  "Add VIDEO to the YouTube history, once per session.
+Problems go to the player log, \[yt-player-show-log]."
+  (let ((id (yt-video-id video)))
+    (when (and yt-player-youtube-history id
+               (not (gethash id yt-player--youtube-history-sent)))
+      (puthash id t yt-player--youtube-history-sent)
+      (let ((fail (lambda (why)
+                    (remhash id yt-player--youtube-history-sent)
+                    (yt-player-log "Could not add “%s” to the YouTube history: %s"
+                                   (yt-player--title video) why))))
+        (yt-auth-run
+         (yt-ytdlp-mark-watched-args (yt-video-url video))
+         :parse nil :key (cons 'yt-youtube-history id)
+         :on-success
+         (lambda (_output info)
+           (when (string-match-p "Unable to mark" (or (plist-get info :stderr) ""))
+             (funcall fail "YouTube did not accept it")))
+         :on-error
+         (lambda (err)
+           (unless (eq (plist-get err :type) 'cancelled)
+             (funcall fail (plist-get err :message)))))))))
+
+(defun yt-player-started (video)
+  "Note that a backend started to play VIDEO.
+Add it to yt's history and, if `yt-player-youtube-history' is
+non-nil, to the YouTube history, then run
+`yt-player-file-started-functions'."
+  (when (yt-video-id video)
+    (yt-cache-add-history video))
+  (yt-player--add-to-youtube-history video)
+  (run-hook-with-args 'yt-player-file-started-functions video))
 
 (defun yt-player--fill-video (video streams)
   "Fill in the title and duration of VIDEO from its resolved STREAMS."

@@ -46,6 +46,9 @@ Older videos drop out of the feed but keep their watched state.")
 Each function is called with a list of video ids and the new state,
 non-nil for watched.")
 
+(defvar yt-history-changed-hook nil
+  "Hook run after the list of videos you played changed.")
+
 (defvar yt-subscriptions-changed-functions nil
   "Abnormal hook run after you subscribed to a channel or unsubscribed.
 Each function is called with the channel, a plist with :id, :name
@@ -54,7 +57,7 @@ and :url, and non-nil if you are now subscribed.")
 (defvar yt-cache--db nil
   "The open cache database, or nil.")
 
-(defconst yt-cache--schema-version 3
+(defconst yt-cache--schema-version 4
   "Version of the cache schema, stored as SQLite's user_version.")
 
 (defconst yt-cache--fields
@@ -85,7 +88,10 @@ Version 2 added the channels table, version 3 the playlists table."
                  "CREATE TABLE IF NOT EXISTS channels (
                    id TEXT PRIMARY KEY, pos INTEGER NOT NULL, data TEXT NOT NULL)"
                  "CREATE TABLE IF NOT EXISTS playlists (
-                   id TEXT PRIMARY KEY, saved_at INTEGER NOT NULL, data TEXT NOT NULL)"))
+                   id TEXT PRIMARY KEY, saved_at INTEGER NOT NULL, data TEXT NOT NULL)"
+                 "CREATE TABLE IF NOT EXISTS history (
+                   id TEXT PRIMARY KEY, played_at INTEGER NOT NULL)"
+                 "CREATE INDEX IF NOT EXISTS history_order ON history (played_at)"))
     (sqlite-execute db sql))
   (sqlite-execute db (format "PRAGMA user_version = %d" yt-cache--schema-version)))
 
@@ -441,13 +447,52 @@ cache yet are added with only their id.  Run
     ids))
 
 ;;;###autoload
+;;;; Played videos
+
+(defun yt-cache-add-history (video)
+  "Note that VIDEO started to play now, and run `yt-history-changed-hook'.
+VIDEO is cached too, if it is not yet."
+  (when-let* ((id (yt-video-id video)))
+    (unless (yt-cache-get id)
+      (yt-cache-put-videos (list video)))
+    (sqlite-execute (yt-cache-db)
+                    "INSERT OR REPLACE INTO history (id, played_at) VALUES (?, ?)"
+                    (list id (truncate (yt--now))))
+    (run-hooks 'yt-history-changed-hook)))
+
+(defun yt-cache-history (&optional limit)
+  "Return the videos you played, the most recent first, at most LIMIT.
+Each element is (VIDEO . PLAYED-AT), PLAYED-AT in seconds since the epoch."
+  (mapcar (lambda (row)
+            (cons (apply #'yt-cache--decode (butlast row)) (car (last row))))
+          (sqlite-select
+           (yt-cache-db)
+           "SELECT v.data, v.fetched_at, v.watched, v.position, h.played_at
+            FROM history h JOIN videos v ON v.id = h.id
+            ORDER BY h.played_at DESC, h.rowid DESC LIMIT ?"
+           (list (or limit yt-cache-feed-max)))))
+
+(defun yt-cache-remove-history (ids)
+  "Remove the videos with IDS from the played videos."
+  (let ((db (yt-cache-db)))
+    (yt-cache--with-transaction db
+      (dolist (id ids)
+        (sqlite-execute db "DELETE FROM history WHERE id = ?" (list id)))))
+  (run-hooks 'yt-history-changed-hook))
+
+(defun yt-cache-clear-history ()
+  "Forget every played video, but not what was watched or where you stopped."
+  (sqlite-execute (yt-cache-db) "DELETE FROM history")
+  (run-hooks 'yt-history-changed-hook))
+
 (defun yt-forget-history ()
-  "Forget which videos you watched and where you stopped."
+  "Forget the videos you played and watched, and where you stopped."
   (interactive)
-  (when (yes-or-no-p "Forget all watched marks and resume positions? ")
+  (when (yes-or-no-p "Forget the played videos, watched marks and resume positions? ")
     (let ((ids (mapcar #'car (sqlite-select (yt-cache-db)
                                             "SELECT id FROM videos WHERE watched <> 0"))))
       (sqlite-execute (yt-cache-db) "UPDATE videos SET watched = 0, position = NULL")
+      (yt-cache-clear-history)
       (when ids
         (run-hook-with-args 'yt-watched-changed-functions ids nil))
       (message "Forgot the watch history of %d videos" (length ids)))))
