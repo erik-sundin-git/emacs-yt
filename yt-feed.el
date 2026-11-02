@@ -326,19 +326,19 @@ FILTER."
            (and (yt-feed--thumbnails-p) (list (yt-feed--thumbnail-cell video)))
            (list
            (if watched " " (propertize "●" 'face 'yt-feed-new-marker))
+           (propertize (or (yt-video-channel video) "") 'face 'yt-feed-channel)
+           (concat (yt-feed--badge video)
+                   (propertize (or (yt-video-title video) (yt-video-id video))
+                               'face (if watched
+                                         'yt-feed-title-watched
+                                       'yt-feed-title-unwatched)))
            (propertize (yt-video-format-age (yt-video-timestamp video) now)
                        'face 'yt-feed-age)
            (pcase live
              ('is_live (propertize "LIVE" 'face 'yt-feed-live))
              ('is_upcoming (propertize "SOON" 'face 'yt-feed-upcoming))
              (_ (propertize (yt-video-format-duration (yt-video-duration video))
-                            'face 'yt-feed-duration)))
-           (propertize (or (yt-video-channel video) "") 'face 'yt-feed-channel)
-           (concat (yt-feed--badge video)
-                   (propertize (or (yt-video-title video) (yt-video-id video))
-                               'face (if watched
-                                         'yt-feed-title-watched
-                                       'yt-feed-title-unwatched))))))))
+                            'face 'yt-feed-duration))))))))
 
 (defun yt-feed--entries ()
   "Return the tabulated-list entries of the videos that pass the filter."
@@ -844,10 +844,10 @@ to the channel of the video at point."
 
 (defconst yt-feed--format
   [(" " 1 nil)
-   ("Age" 5 yt-feed--sort-age :right-align t)
-   ("Dur" 8 yt-feed--sort-duration :right-align t)
    ("Channel" 20 t)
-   ("Title" 60 t)]
+   ("Title" 70 t)
+   ("Age" 5 yt-feed--sort-age :right-align t)
+   ("Dur" 8 yt-feed--sort-duration :right-align t)]
   "The columns of the feed without thumbnails.")
 
 (defun yt-feed--set-format ()

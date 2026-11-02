@@ -2,6 +2,8 @@
 
 * Unreleased
 ** After M7
+- The feed's columns start with the channel and the title; the age and
+  the duration follow them.
 - Thumbnails are larger, 90 pixels high instead of 54, and
   =yt-thumbs-height= is now a user option.
 - Subscribing: =+= in a channel's uploads, the subscription feed or search

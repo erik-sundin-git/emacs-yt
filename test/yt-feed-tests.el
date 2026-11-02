@@ -130,14 +130,14 @@ YTDLP is bound to the scenario directory of the fake yt-dlp."
       (should (eq major-mode 'yt-feed-mode))
       (should (equal (yt-feed-test--ids) yt-feed-test--fixture-ids))
       (let ((text (buffer-string)))
-        (should (string-match-p "Age +Dur +Channel +Title" text))
-        (should (string-match-p "● +5h +12:34 Fake Channel One +A normal video with ünïcode"
+        (should (string-match-p "Channel +Title +Age +Dur" text))
+        (should (string-match-p "● Fake Channel One +A normal video with ünïcode +5h +12:34"
                                 text))
-        (should (string-match-p "SOON Fake Channel Two +\\[SOON\\] An upcoming premiere"
+        (should (string-match-p "Fake Channel Two +\\[SOON\\] An upcoming premiere +SOON"
                                 text))
-        (should (string-match-p "1d +1:30:32 Fake Channel One +A past live stream" text))
+        (should (string-match-p "Fake Channel One +A past live stream +1d +1:30:32" text))
         ;; The Short has no time of its own and inherits the one before it.
-        (should (string-match-p "1d +\\[S\\] A short" text)))
+        (should (string-match-p "\\[S\\] A short +1d" text)))
       (let ((header (yt-feed--header-line)))
         (should (string-match-p "updated just now" header))
         (should (string-match-p "4 videos" header)))
@@ -338,7 +338,10 @@ YTDLP is bound to the scenario directory of the fake yt-dlp."
         (should (yt-video-watched (yt-cache-get "fakevideo01")))
         (yt-feed-test--goto "fakevideo01")
         (should-not (looking-at-p "●"))
-        (should (eq (get-text-property (- (line-end-position) 1) 'face)
+        (should (eq (get-text-property (prop-match-beginning
+                                        (text-property-search-forward
+                                         'tabulated-list-column-name "Title" t))
+                                       'face)
                     'yt-feed-title-watched))
         (should (equal (yt-feed-test--ids) yt-feed-test--fixture-ids))
         ;; Hiding watched videos removes the row.
