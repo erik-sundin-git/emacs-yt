@@ -736,9 +736,9 @@ Without a region, move to the next row."
               (list (plist-get item :id)
                     (vector (if (plist-get item :current) "▶" " ")
                             (number-to-string (1+ (plist-get item :index)))
-                            (yt-video-format-duration (and video (yt-video-duration video)))
                             (or (and video (yt-video-channel video)) "")
-                            (or (plist-get item :title) "")))))
+                            (or (plist-get item :title) "")
+                            (yt-video-format-duration (and video (yt-video-duration video)))))))
           yt-playlist--items))
 
 (defun yt-playlist--item ()
@@ -802,8 +802,8 @@ Without a region, move to the next row."
   :group 'yt-player
   :interactive nil
   (setq tabulated-list-format [(" " 1 nil) ("#" 3 nil :right-align t)
-                               ("Dur" 8 nil :right-align t) ("Channel" 20 nil)
-                               ("Title" 50 nil)]
+                               ("Channel" 20 nil) ("Title" 70 nil)
+                               ("Dur" 8 nil :right-align t)]
         tabulated-list-entries #'yt-playlist--entries)
   (setq-local yt-video-at-point-function #'yt-playlist--video-at-point)
   (setq-local revert-buffer-function (lambda (&rest _) (yt-playlist-refresh)))

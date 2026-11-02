@@ -529,7 +529,7 @@ A sleeping process stands in for mpv."
       (with-current-buffer (yt-player-playlist)
         (yt-test-wait-until (lambda () yt-playlist--items) "playlist")
         (let ((text (buffer-string)))
-          (should (string-match-p "▶ +1 +1:00 Fake Channel One +Title videolist01" text))
+          (should (string-match-p "▶ +1 Fake Channel One +Title videolist01 +1:00" text))
           (should (string-match-p "  +2 +Title videolist02" text)))
         (goto-char (point-min))
         (search-forward "videolist02")
