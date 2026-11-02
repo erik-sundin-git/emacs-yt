@@ -8,7 +8,8 @@ fetches everything with yt-dlp.  It uses no OAuth and no API key.
 - =M-x yt= opens the subscription feed: the cached videos at once, then a
   refresh in the background.
 - =RET= plays in mpv, which Emacs controls (pause, seek, speed, playlist,
-  now-playing in the mode line, resume where you stopped).  =v= streams to
+  now-playing in the mode line, resume where you stopped, skipping
+  sponsored segments with SponsorBlock).  =v= streams to
   VLC instead.
 - Channels, channel uploads, subscribing and unsubscribing, the playlists a
   channel made (and saving them in yt), search, video details with chapters, watched marks, filters,
@@ -94,6 +95,7 @@ try again; yt waits 15 minutes before sending more requests.
 | =n= / =p=      | next / previous in the playlist              |
 | =l=            | the playlist                                 |
 | =z=            | shuffle mpv's playlist                       |
+| =U= / =K=      | undo the last SponsorBlock skip / skipping on or off |
 | =S= / =Q=      | stop / quit mpv                              |
 | =!=            | log of playback problems                     |
 
@@ -148,6 +150,20 @@ With embark, =embark-act= on a video (a completion candidate or the row at
 point) offers the same keys.  With marginalia, completion candidates show
 their channel, age and duration.
 
+* SponsorBlock
+mpv skips the segments of videos that [[https://sponsor.ajay.app][SponsorBlock]]'s community marked as
+sponsors, self-promotion or reminders to subscribe, and says so in the echo
+area: "Skipped sponsor (44 s)".  =C-c y U= goes back to the start of the
+segment skipped last, which is then not skipped again; =C-c y K= turns
+skipping off or on for the session.  The info buffer (=i=) lists a video's
+segments, and which of them mpv skips.
+
+=yt-sponsorblock-categories= chooses the categories; intros, endcards,
+recaps, filler and others are off by default, and nil turns SponsorBlock
+off.  yt asks SponsorBlock with curl while it resolves the streams, so
+playback does not wait for it; when it cannot be reached, the video plays
+without skipping.  VLC skips nothing: Emacs does not control it.
+
 * The mpv window
 mpv opens its own window with the Wayland app id =emacs-yt=, so window
 managers can place it.  For sway, for example:
@@ -179,6 +195,7 @@ on the display of the selected frame.
 - =yt-feed-hide-watched=, =yt-feed-hide-shorts=, =yt-feed-hide-upcoming=,
   =yt-feed-thumbnails=: the feed's defaults
 - =yt-thumbs-height=: the height of thumbnails, by default 90 pixels
+- =yt-sponsorblock-categories=: the SponsorBlock segments mpv skips
 - =yt-cookie-profile=: the Chromium profile, instead of choosing it with
   =yt-login=
 
@@ -188,7 +205,10 @@ on the display of the selected frame.
   fetch the video streams from googlevideo.com.  Thumbnails come from
   i.ytimg.com, through curl, without cookies.  Subscribing and
   unsubscribing send one request to www.youtube.com through curl, with the
-  cookies.  There is no telemetry and no self-update.
+  cookies.  Before mpv plays a video, and when its details are shown, curl
+  asks sponsor.ajay.app for SponsorBlock segments, without cookies, naming
+  only the first 4 characters of the SHA-256 hash of the video id, which
+  many videos share.  There is no telemetry and no self-update.
 - *Cookies:* only those of the chosen profile, only for youtube.com, in a
   mode 0600 file under =~/.local/state/yt/=.  Every yt-dlp run gets its own
   private copy in =$XDG_RUNTIME_DIR/yt/=, deleted afterwards; so does curl

@@ -45,6 +45,7 @@
 (require 'yt-process)
 (require 'yt-cache)
 (require 'yt-player)
+(require 'yt-sponsorblock)
 
 (defvar yt-mpv-connect-attempts 50
   "How often to try connecting to a new mpv's socket.")
@@ -68,8 +69,10 @@
 VIDEO is the `yt-video' and STREAMS its resolved streams.  DURATION,
 POS and MAX-POS are in seconds.  FINALIZED is non-nil once the entry
 was marked watched or its position saved; RETRIED once it was
-resolved again after a playback error."
-  video streams duration pos (max-pos 0) finalized retried)
+resolved again after a playback error.  SKIPPED lists the
+SponsorBlock segments skipped, which are not skipped again, and
+LAST-SKIP is the latest of them."
+  video streams duration pos (max-pos 0) finalized retried skipped last-skip)
 
 (defvar yt-mpv--instance 0
   "Number of the current mpv instance, incremented at each spawn.")
@@ -109,6 +112,9 @@ resolved again after a playback error."
 
 (defvar yt-mpv--log nil
   "The latest warnings from mpv, newest first.")
+
+(defvar yt-mpv--skipping t
+  "Non-nil means mpv skips SponsorBlock segments; see `yt-sponsorblock-categories'.")
 
 (defun yt-mpv--reset ()
   "Forget the state of the current mpv, but not its instance number."
@@ -337,10 +343,48 @@ with nil and an error message.  Return the request id."
       ("time-pos" (when (numberp value)
                     (setf (yt-mpv--entry-pos entry) value)
                     (when (> value (yt-mpv--entry-max-pos entry))
-                      (setf (yt-mpv--entry-max-pos entry) value))))
+                      (setf (yt-mpv--entry-max-pos entry) value))
+                    (yt-mpv--maybe-skip entry value)))
       ("duration" (when (numberp value)
                     (setf (yt-mpv--entry-duration entry) value)))))
   (yt-player-update-mode-line (yt-mpv--state)))
+
+;;;; SponsorBlock
+
+(defun yt-mpv--segment-at (entry pos)
+  "Return the segment of ENTRY's video to skip at POS, or nil.
+A segment is skipped once, and not in its last half second, where
+seeking to its end would gain nothing."
+  (when-let* ((video (yt-mpv--entry-video entry)))
+    (seq-find (lambda (segment)
+                (and (<= (plist-get segment :start) pos)
+                     (< pos (- (plist-get segment :end) 0.5))
+                     (not (memq segment (yt-mpv--entry-skipped entry)))))
+              (yt-sponsorblock-skippable
+               (yt-sponsorblock-segments (yt-video-id video))
+               (or (yt-mpv--entry-duration entry) (yt-video-duration video))))))
+
+(defun yt-mpv--maybe-skip (entry pos)
+  "Skip the SponsorBlock segment of ENTRY that POS is in, if any."
+  (when-let* ((yt-mpv--skipping)
+              (segment (yt-mpv--segment-at entry pos)))
+    (push segment (yt-mpv--entry-skipped entry))
+    (setf (yt-mpv--entry-last-skip entry) segment)
+    (yt-mpv-send (list "seek" (plist-get segment :end) "absolute") #'yt-mpv--report)
+    (message "Skipped %s (%d s); %s goes back"
+             (yt-sponsorblock-category-name (plist-get segment :category))
+             (round (- (plist-get segment :end) (plist-get segment :start)))
+             (substitute-command-keys "\\[yt-player-unskip]"))))
+
+(defun yt-mpv--unskip ()
+  "Seek back to the start of the segment skipped last in the current video."
+  (let* ((entry (and yt-mpv--current (gethash yt-mpv--current yt-mpv--entries)))
+         (segment (and entry (yt-mpv--entry-last-skip entry))))
+    (unless segment
+      (user-error "Nothing was skipped in this video"))
+    (setf (yt-mpv--entry-last-skip entry) nil)
+    (yt-mpv-send (list "seek" (plist-get segment :start) "absolute") #'yt-mpv--report)
+    (message "Back to the %s" (yt-sponsorblock-category-name (plist-get segment :category)))))
 
 (defun yt-mpv--mark-started (entry)
   "Note that the video of ENTRY started.
@@ -539,6 +583,10 @@ RETRIED non-nil means this is a second try after an error."
   (unless (executable-find yt-mpv-program)
     (user-error "The mpv program was not found: enable the yt flake's home-manager module (or `nix profile install ~/dev/emacs-yt#runtime'), or use `v' for VLC")))
 
+(cl-defmethod yt-player-backend-prepare ((_backend (eql 'mpv)) video)
+  "Fetch the SponsorBlock segments of VIDEO, to skip them."
+  (yt-sponsorblock-fetch (yt-video-id video)))
+
 (cl-defmethod yt-player-backend-play ((_backend (eql 'mpv)) video streams &key start)
   "Play VIDEO with the resolved STREAMS in mpv now, from START."
   (yt-mpv--load video streams "replace" start))
@@ -577,6 +625,10 @@ RETRIED non-nil means this is a second try after an error."
     ('shuffle (yt-mpv-send '("playlist-shuffle") #'yt-mpv--report))
     ('play-index (yt-mpv-send (list "playlist-play-index" (car args)) #'yt-mpv--report))
     ('remove (yt-mpv-send (list "playlist-remove" (car args)) #'yt-mpv--report))
+    ('unskip (yt-mpv--unskip))
+    ('toggle-skipping
+     (setq yt-mpv--skipping (not yt-mpv--skipping))
+     (message "Skipping SponsorBlock segments: %s" (if yt-mpv--skipping "on" "off")))
     (_ (cl-call-next-method))))
 
 (cl-defmethod yt-player-backend-playlist ((_backend (eql 'mpv)) callback)

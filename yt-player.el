@@ -65,6 +65,10 @@
   "Signal a `user-error' if BACKEND cannot play videos."
   (user-error "Unknown yt player backend `%s'" backend))
 
+(cl-defgeneric yt-player-backend-prepare (_backend _video)
+  "Prepare to play VIDEO with BACKEND, while its streams are resolved."
+  nil)
+
 (cl-defgeneric yt-player-backend-play (backend video streams &key start)
   "Play VIDEO, whose resolved STREAMS are a plist, with BACKEND now.
 STREAMS come from `yt-ytdlp-parse-streams'.  START is the position
@@ -228,6 +232,7 @@ replaces a waiting one, unless either is INDEPENDENT."
   (yt-player--load backend)
   (yt-player-display-environment)
   (message "Resolving “%s”..." (yt-player--title video))
+  (yt-player-backend-prepare backend video)
   (yt-player-resolve
    video
    (lambda (streams _info)
@@ -259,6 +264,7 @@ playlist in the order they were queued."
     (setq yt-player--queue-busy t)
     (let ((backend (car next))
           (video (cdr next)))
+      (yt-player-backend-prepare backend video)
       (yt-player-resolve
        video
        (lambda (streams _info)
@@ -576,6 +582,19 @@ Do nothing when `repeat-mode' is on, which handles this itself."
   "Play the previous video of the playlist."
   (interactive)
   (yt-player--command 'previous))
+
+;;;###autoload
+(defun yt-player-unskip ()
+  "Go back to the start of the segment mpv skipped last in this video.
+It is not skipped again.  See `yt-sponsorblock-categories'."
+  (interactive)
+  (yt-player--command 'unskip))
+
+;;;###autoload
+(defun yt-player-toggle-skipping ()
+  "Turn skipping SponsorBlock segments off or on, for this session."
+  (interactive)
+  (yt-player--command 'toggle-skipping))
 
 ;;;###autoload
 (defun yt-player-quit ()

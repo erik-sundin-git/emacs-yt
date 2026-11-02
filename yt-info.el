@@ -38,6 +38,7 @@
 (require 'yt-ytdlp)
 (require 'yt-auth)
 (require 'yt-player)
+(require 'yt-sponsorblock)
 (require 'yt-feed)
 
 (defface yt-info-title '((t :inherit (bold yt-feed-title) :height 1.2))
@@ -68,6 +69,9 @@
   "The details fetched for the video, a plist, or nil.
 It has :description, :chapters (a list of (START . TITLE)), :tags,
 :likes and :views.")
+
+(defvar-local yt-info--segments nil
+  "The SponsorBlock segments of the video, as from `yt-sponsorblock-fetch'.")
 
 (defvar-local yt-info--status nil
   "`fetching', an error message, or nil.")
@@ -171,6 +175,20 @@ See `yt-info--details'."
                             'action #'yt-info--play-chapter 'yt-start (car chapter)
                             'help-echo "Play from here")
         (insert "  " (cdr chapter) "\n")))
+    (when yt-info--segments
+      (insert "\n" (propertize "SponsorBlock" 'face 'yt-info-heading) "\n")
+      (dolist (segment (sort (copy-sequence yt-info--segments)
+                             (lambda (a b) (< (plist-get a :start) (plist-get b :start)))))
+        (insert "  ")
+        (insert-text-button (format "%8s" (yt-video-format-duration (plist-get segment :start)))
+                            'action #'yt-info--play-chapter 'yt-start (plist-get segment :start)
+                            'help-echo "Play from here")
+        (insert (format "–%-8s %s%s\n"
+                        (yt-video-format-duration (plist-get segment :end))
+                        (yt-sponsorblock-category-name (plist-get segment :category))
+                        (if (memq (plist-get segment :category) yt-sponsorblock-categories)
+                            (propertize "  skipped in mpv" 'face 'shadow)
+                          "")))))
     (when-let* ((tags (plist-get details :tags)))
       (insert "\n")
       (yt-info--field "Tags" (string-join tags ", ")))
@@ -190,6 +208,16 @@ See `yt-info--details'."
         (video yt-info--video))
     (setq yt-info--status 'fetching)
     (yt-info--render)
+    (yt-sponsorblock-fetch
+     (yt-video-id video)
+     (lambda (segments)
+       (when (and segments (buffer-live-p buffer)
+                  ;; The video object is replaced once its details arrive.
+                  (equal (yt-video-id (buffer-local-value 'yt-info--video buffer))
+                         (yt-video-id video)))
+         (with-current-buffer buffer
+           (setq yt-info--segments segments)
+           (yt-info--render)))))
     (yt-process-queue-run
      yt-info--queue
      (lambda (done)

@@ -2,6 +2,13 @@
 
 * Unreleased
 ** After M7
+- SponsorBlock: mpv skips sponsor, self-promotion and interaction-reminder
+  segments (=yt-sponsorblock-categories=), and says so; =C-c y U= undoes
+  the last skip and =C-c y K= turns skipping off or on.  =yt-sponsorblock.el=
+  asks sponsor.ajay.app with curl, by a 4-character hash prefix and
+  without cookies, while the streams are resolved
+  (=yt-player-backend-prepare=), so neither a slow nor a failed answer
+  delays playback.  The info buffer lists the segments.
 - The feed's columns, and those of the player's playlist, start with the
   channel and the title; the age and the duration follow them.
 - Thumbnails are larger, 90 pixels high instead of 54, and

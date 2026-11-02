@@ -3,13 +3,14 @@
 #
 # Appends its arguments, on one line, to $FAKE_CURL_DIR/calls.
 #
-# With --config FILE, it stands in for a YouTube API request.  For the
-# Nth such call (NN = 01, 02, ...) it copies FILE to config-NN and the
-# cookie file the config names to cookies-NN, then prints NN.response
-# followed by a newline and the HTTP status in NN.status (default 200),
-# as --write-out does.
+# Without --output, it stands in for an API request (YouTube's, with
+# --config FILE, or SponsorBlock's).  For the Nth such call (NN = 01,
+# 02, ...) it copies FILE, if any, to config-NN and the cookie file the
+# config names to cookies-NN, then prints NN.response followed by a
+# newline and the HTTP status in NN.status (default 200), as
+# --write-out does.
 #
-# Otherwise it downloads a thumbnail: if $FAKE_CURL_DIR/hang exists,
+# With --output, it downloads a thumbnail: if $FAKE_CURL_DIR/hang exists,
 # writes half a file to the --output file and sleeps until killed; if
 # $FAKE_CURL_DIR/fail exists, exits 22 as curl --fail does; otherwise
 # writes a fake image to the --output file.
@@ -27,13 +28,15 @@ for arg in "$@"; do
     prev=$arg
 done
 
-if [ -n "$config" ]; then
+if [ -z "$output" ]; then
     n=$(( $(cat "$dir/api-count" 2>/dev/null || echo 0) + 1 ))
     echo "$n" > "$dir/api-count"
     nn=$(printf '%02d' "$n")
-    cp "$config" "$dir/config-$nn"
-    cookies=$(sed -n 's/^cookie = "\(.*\)"$/\1/p' "$config")
-    [ -f "$cookies" ] && cp "$cookies" "$dir/cookies-$nn"
+    if [ -n "$config" ]; then
+        cp "$config" "$dir/config-$nn"
+        cookies=$(sed -n 's/^cookie = "\(.*\)"$/\1/p' "$config")
+        [ -f "$cookies" ] && cp "$cookies" "$dir/cookies-$nn"
+    fi
     [ -f "$dir/$nn.response" ] && cat "$dir/$nn.response"
     printf '\n%s' "$(cat "$dir/$nn.status" 2>/dev/null || echo 200)"
     exit 0

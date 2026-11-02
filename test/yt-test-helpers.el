@@ -19,6 +19,7 @@
 (require 'yt-auth)
 (require 'yt-cache)
 (require 'yt-feed)
+(require 'yt-sponsorblock)
 
 (defconst yt-test-dir
   (file-name-directory (or load-file-name buffer-file-name))
@@ -46,6 +47,10 @@
       (error "Test isolation broken: %s is outside %s" dir yt-test-root))))
 
 (yt-test--assert-isolated)
+
+;; Tests use no network: SponsorBlock is off unless a test turns it on
+;; with the fake curl.
+(setq yt-sponsorblock-categories nil)
 
 ;; Tests must never persist customizations.
 (advice-add 'customize-save-variable :override
@@ -252,6 +257,8 @@ sign-in state, the cache and the feed buffers are reset."
             (yt-feed--fully-refreshed nil)
             (yt-watched-changed-functions nil)
             (yt-auth-state-change-hook nil)
+            (yt-sponsorblock--segments (make-hash-table :test #'equal))
+            (yt-sponsorblock--waiting (make-hash-table :test #'equal))
             (process-environment
              (append (list (concat "FAKE_SCENARIO=" ,(car dirs))
                            (concat "FAKE_EXPORT_SCENARIO=" ,(cadr dirs)))

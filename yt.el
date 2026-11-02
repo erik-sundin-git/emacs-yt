@@ -413,6 +413,8 @@ Each binding has a short label, which which-key shows."
   "p" '("previous video" . yt-player-previous)
   "l" '("playlist" . yt-player-playlist)
   "z" '("shuffle playlist" . yt-player-shuffle-playlist)
+  "U" '("undo skip" . yt-player-unskip)
+  "K" '("skipping on/off" . yt-player-toggle-skipping)
   "S" '("stop" . yt-player-stop)
   "Q" '("quit player" . yt-player-quit)
   "!" '("player log" . yt-player-show-log))
