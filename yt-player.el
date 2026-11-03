@@ -116,6 +116,17 @@ does not depend on this."
 (defvar yt-player--youtube-history-sent (make-hash-table :test #'equal)
   "Ids of the videos added to the YouTube history in this session.")
 
+(defvar yt-player--asked (make-hash-table :test #'equal)
+  "When each video id was asked to play, for the trace in *yt-log*.")
+
+(defun yt-player--trace (video what)
+  "Log in *yt-log* that VIDEO reached the step WHAT, with the time so far.
+Only the id is logged, never the title or a URL."
+  (when-let* ((id (yt-video-id video)))
+    (let ((asked (gethash id yt-player--asked)))
+      (yt-process-log "play %s: %s%s" id what
+                      (if asked (format " (%.1f s)" (- (float-time) asked)) "")))))
+
 (defvar yt-player-resolve-failed-functions nil
   "Abnormal hook run with a `yt-video' whose streams could not be resolved.")
 
@@ -153,10 +164,12 @@ is none."
 
 ;;;; Problems
 
+(defvar yt-url-history nil
+  "History of the URLs typed at \\[yt-play-url].")
+
 (defun yt-player--redact (text)
-  "Return TEXT with stream URLs replaced by a placeholder."
-  (replace-regexp-in-string
-   "[^[:space:]\"'`=]*googlevideo\\.com[^[:space:]\"'`]*" "<stream URL>" text t t))
+  "Return TEXT with stream URLs and credentials replaced by placeholders."
+  (yt-process-redact text))
 
 (defun yt-player-log (format-string &rest args)
   "Add a line made from FORMAT-STRING and ARGS to the player log.
@@ -340,6 +353,8 @@ Add it to yt's history and, if `yt-player-youtube-history' is
 non-nil, to the YouTube history, then run
 `yt-player-file-started-functions'."
   (when (yt-video-id video)
+    (yt-player--trace video "started")
+    (remhash (yt-video-id video) yt-player--asked)
     (yt-cache-add-history video))
   (yt-player--add-to-youtube-history video)
   (run-hook-with-args 'yt-player-file-started-functions video))
@@ -356,14 +371,19 @@ non-nil, to the YouTube history, then run
   (yt-player--load backend)
   (yt-player-display-environment)
   (message "Resolving “%s”..." (yt-player--title video))
+  (when (yt-video-id video)
+    (puthash (yt-video-id video) (float-time) yt-player--asked))
+  (yt-player--trace video "resolving")
   (yt-player-backend-prepare backend video)
   (yt-player-resolve
    video
    (lambda (streams _info)
      (yt-player--fill-video video streams)
+     (yt-player--trace video "resolved")
      (yt-player--when-available
       streams
       (lambda ()
+        (yt-player--trace video (format "loading in %s" backend))
         (setq yt-player--current-backend backend)
         (yt-player-backend-play backend video streams :start start))))
    (lambda (err)
@@ -447,7 +467,8 @@ for a stream that is live."
   (let* ((default (seq-find (lambda (s) (and (stringp s) (yt-video-from-url s)))
                             (list (thing-at-point 'url t)
                                   (ignore-errors (current-kill 0 t)))))
-         (url (read-string (format-prompt "YouTube URL" default) nil nil default)))
+         (url (read-string (format-prompt "YouTube URL" default) nil
+                           (yt-minibuffer-history 'yt-url-history) default)))
     (or (yt-video-from-url url)
         (user-error "Not a YouTube video URL: %s" url))))
 

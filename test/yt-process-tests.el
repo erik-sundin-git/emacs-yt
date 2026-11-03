@@ -171,5 +171,38 @@ callers do not clean up twice; a busy key returns nil with no callback."
         (yt-test-wait-until (lambda () (not (process-live-p first))) "cancel")))
     (should-not (memq 'called errors))))
 
+(ert-deftest yt-process-log-redacts-and-stays-small ()
+  "*yt-log* never holds stream URLs or credentials, and keeps a bounded size."
+  (with-current-buffer (get-buffer-create "*yt-log*")
+    (let ((inhibit-read-only t)) (erase-buffer)))
+  (yt-process-log "run mpv https://rr1---fake.googlevideo.com/videoplayback?%s=1"
+                  "expire")
+  (yt-process-log "header Authorization: SAPISIDHASH 1793500000_abcdef0123")
+  (yt-process-log "sent SAPISID3PHASH 1793500000_abcdef0123 and Cookie: SID=FAKE-sid")
+  (let ((text (with-current-buffer "*yt-log*" (buffer-string))))
+    (should (string-match-p "run mpv <stream URL>" text))
+    (should (string-match-p "Authorization: <redacted>" text))
+    (should (string-match-p "sent SAPISIDHASH <redacted> and Cookie: <redacted>" text))
+    (should-not (string-match-p "googlevideo\\|abcdef0123\\|FAKE-sid" text)))
+  (let ((yt-process-log-size 2000))
+    (dotimes (n 300)
+      (yt-process-log "line %d of the log" n))
+    (with-current-buffer "*yt-log*"
+      (should (<= (buffer-size) 2100))
+      (should (string-match-p "line 299 of the log\n\\'" (buffer-string)))
+      (goto-char (point-min))
+      (should (looking-at-p "[0-9:.]+ line [0-9]+ of the log")))))
+
+(ert-deftest yt-process-prompts-stay-out-of-savehist ()
+  "yt's prompt histories are kept from savehist unless asked otherwise."
+  (require 'savehist)
+  (let ((savehist-ignored-variables nil))
+    (yt-minibuffer-history 'yt-search-history)
+    (should (memq 'yt-search-history savehist-ignored-variables))
+    (setq savehist-ignored-variables nil)
+    (let ((yt-save-minibuffer-history t))
+      (yt-minibuffer-history 'yt-search-history))
+    (should-not savehist-ignored-variables)))
+
 (provide 'yt-process-tests)
 ;;; yt-process-tests.el ends here

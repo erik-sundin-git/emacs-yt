@@ -186,6 +186,28 @@ cannot subscribe to the channel itself."
   :group 'yt-backend
   :package-version '(yt . "0.2.0"))
 
+(defcustom yt-save-minibuffer-history nil
+  "Non-nil means `savehist-mode' may save what you type at yt's prompts.
+That is search queries, filters and URLs.  nil means yt's prompts
+keep their own histories for the session only: yt adds them to
+`savehist-ignored-variables'."
+  :type 'boolean
+  :group 'yt
+  :package-version '(yt . "0.2.0"))
+
+(defvar savehist-ignored-variables)
+
+(defun yt-minibuffer-history (symbol)
+  "Return SYMBOL, the history variable of a yt prompt.
+Unless `yt-save-minibuffer-history' is non-nil, keep it out of what
+`savehist-mode' saves."
+  (unless (or yt-save-minibuffer-history (not (boundp 'savehist-ignored-variables)))
+    (add-to-list 'savehist-ignored-variables symbol))
+  symbol)
+
+(defvar yt-filter-history nil
+  "History of the filters typed in yt's lists.")
+
 (defcustom yt-cookie-profile nil
   "Chromium profile directory that yt reads YouTube cookies from.
 nil means the profile chosen with \\[yt-login], which yt remembers

@@ -216,7 +216,8 @@ once its videos arrive."
 (defun yt-playlists-filter (query)
   "Show only the playlists with QUERY in their title or channel.
 An empty QUERY shows all of them."
-  (interactive (list (read-string "Filter playlists: " yt-playlists--query))
+  (interactive (list (read-string "Filter playlists: " yt-playlists--query
+                                  (yt-minibuffer-history 'yt-filter-history)))
                yt-playlists-mode)
   (setq yt-playlists--query (and (not (string-blank-p query)) query))
   (yt-playlists--print))

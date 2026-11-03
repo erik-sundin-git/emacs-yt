@@ -206,7 +206,8 @@ forgets them too."
 (defun yt-history-filter (query)
   "Show only the videos with every word of QUERY in their title or channel.
 An empty QUERY shows all of them."
-  (interactive (list (read-string "Filter history: " yt-history--query)) yt-history-mode)
+  (interactive (list (read-string "Filter history: " yt-history--query
+                                  (yt-minibuffer-history 'yt-filter-history))) yt-history-mode)
   (setq yt-history--query (and (not (string-blank-p query)) query))
   (yt-history--print))
 

@@ -61,13 +61,35 @@ become nil."
   (json-parse-string string :object-type 'plist :array-type 'list
                      :null-object nil :false-object nil))
 
+(defvar yt-process-log-size 300000
+  "Characters *yt-log* keeps; older lines are dropped.")
+
+(defun yt-process-redact (text)
+  "Return TEXT with stream URLs and credentials replaced by placeholders.
+Stream URLs are signed for the user's IP address; authorization
+hashes and cookie or authorization headers are secrets."
+  (thread-last
+    text
+    (replace-regexp-in-string
+     "[^[:space:]\"'`=]*\\(?:googlevideo\\.com\\|youtube\\.com/api/timedtext\\)[^[:space:]\"'`]*"
+     "<stream URL>")
+    (replace-regexp-in-string "SAPISID[0-9A-Z]*HASH [0-9]+_[0-9a-f]+" "SAPISIDHASH <redacted>")
+    (replace-regexp-in-string "\\(\\(?:[Cc]ookie\\|[Aa]uthorization\\):\\).*$" "\\1 <redacted>")))
+
 (defun yt-process-log (format-string &rest args)
-  "Append a line made from FORMAT-STRING and ARGS to the *yt-log* buffer."
+  "Append a line made from FORMAT-STRING and ARGS to the *yt-log* buffer.
+Stream URLs and credentials are left out; see `yt-process-redact'."
   (with-current-buffer (get-buffer-create "*yt-log*")
     (let ((inhibit-read-only t))
       (goto-char (point-max))
-      (insert (format-time-string "%T ") (apply #'format format-string args)
-              "\n"))))
+      (insert (format-time-string "%T.%3N ")
+              (yt-process-redact (apply #'format format-string args))
+              "\n")
+      (when (> (buffer-size) yt-process-log-size)
+        (save-excursion
+          (goto-char (- (point-max) (/ yt-process-log-size 2)))
+          (forward-line 1)
+          (delete-region (point-min) (point)))))))
 
 (defun yt-process-deliver (fn &rest args)
   "Call FN with ARGS from a timer, unless FN is nil.

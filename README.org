@@ -239,6 +239,8 @@ on the display of the selected frame.
   =yt-feed-thumbnails=: the feed's defaults
 - =yt-thumbs-height=: the height of thumbnails, by default 90 pixels
 - =yt-sponsorblock-categories=: the SponsorBlock segments mpv skips
+- =yt-save-minibuffer-history=: let =savehist-mode= keep what you type at
+  yt's prompts
 - =yt-player-youtube-history=: add the videos you play to your YouTube
   history
 - =yt-cookie-profile=: the Chromium profile, instead of choosing it with
@@ -270,9 +272,15 @@ on the display of the selected frame.
   which holds stream URLs signed for your IP address.  Those are kept in
   memory only, for mpv, until shortly before they expire, and forgotten
   on =yt-logout=.
-- *Logs:* =*yt-log*= lists the commands yt runs, with search queries
-  replaced by =REDACTED= and stream URLs by =<stream URL>=.  While a search
-  runs, its query is visible to other local users in the process list.
+- *Logs:* =*yt-log*= lists the commands yt runs and how long playing took,
+  by video id, with search queries replaced by =REDACTED=, stream URLs by
+  =<stream URL>= and authorization headers and cookies by =<redacted>=; it
+  keeps the last 300 000 characters.  While a search runs, its query is
+  visible to other local users in the process list.  =yt-doctor= shows no
+  cookies, tokens or titles, but its file names show your user name.
+- *Prompts:* searches, filters and URLs typed at yt's prompts have their
+  own histories, which =savehist-mode= does not save unless
+  =yt-save-minibuffer-history= is set.
 - *mpv:* its control socket, which accepts any mpv command, is in the mode
   0700 runtime directory; yt never falls back to a shared directory.
 

@@ -874,7 +874,8 @@ Quitting restores the previous query."
               (add-hook 'minibuffer-exit-hook
                         (lambda () (when timer (cancel-timer timer)))
                         nil t))
-          (read-string "Filter (words, @channel, !exclude): " old))
+          (read-string "Filter (words, @channel, !exclude): " old
+                       (yt-minibuffer-history 'yt-filter-history)))
       (quit (when timer (cancel-timer timer))
             (yt-feed--set-filter :query old)
             (signal 'quit nil)))))
@@ -900,7 +901,8 @@ to the channel of the video at point."
                                        yt-feed--videos))))
           (here (when-let* ((video (yt-feed-video-at-point)))
                   (yt-video-channel video)))
-          (name (completing-read "Channel: " channels nil t nil nil here)))
+          (name (completing-read "Channel: " channels nil t nil
+                                 (yt-minibuffer-history 'yt-filter-history) here)))
      (list (cons (cdr (assoc name channels)) name)))
    yt-feed-mode)
   (yt-feed--set-filter :channel channel))
@@ -1233,7 +1235,7 @@ The filters and the sort order apply.  Two are kept queued ahead; see
 ;;;###autoload
 (defun yt-search (query)
   "Search YouTube for QUERY and list the results."
-  (interactive (list (read-string "Search YouTube: " nil 'yt-search-history)))
+  (interactive (list (read-string "Search YouTube: " nil (yt-minibuffer-history 'yt-search-history))))
   (when (string-blank-p query)
     (user-error "Nothing to search for"))
   (yt-feed--show (list 'search (string-trim query))

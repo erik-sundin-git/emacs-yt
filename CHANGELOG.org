@@ -1,6 +1,16 @@
 #+title: yt changelog
 
 * Unreleased
+- Privacy of logs and prompts:
+  - =*yt-log*= redacts authorization hashes and cookie or authorization
+    headers as well as stream URLs, whatever logs them, and keeps a
+    bounded size.  It now traces each play by video id ("resolving",
+    "resolved", "loading", "started", with seconds).
+  - yt's prompts (searches, filters, URLs) have their own histories,
+    kept out of =savehist-mode= unless =yt-save-minibuffer-history= is
+    set; filters and URLs used to go to =minibuffer-history=.
+  - =yt-doctor= shows the Chromium profile's directory, not its display
+    name, and says what the report contains.
 - Cookies:
   - Saving the cookies yt-dlp rotated keeps only the youtube.com ones,
     requires every login cookie the old file had, and keeps the old

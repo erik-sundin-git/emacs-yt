@@ -124,7 +124,8 @@ subscription feed."
                                  ,@(and yt-select-group-by-channel
                                         '((group-function . yt-select--group))))
                     (complete-with-action action candidates string predicate))))
-         (choice (completing-read (or prompt "Video: ") table nil t nil 'yt-select-history)))
+         (choice (completing-read (or prompt "Video: ") table nil t nil
+                                  (yt-minibuffer-history 'yt-select-history))))
     (or (yt-select-candidate-video choice)
         (user-error "No such video: %s" choice))))
 

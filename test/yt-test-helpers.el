@@ -318,6 +318,7 @@ See `yt-test--end-scenario' for what is checked at the end."
             (yt-player--wait-timer nil)
             (yt-player--current-backend nil)
             (yt-player--youtube-history-sent (make-hash-table :test #'equal))
+            (yt-player--asked (make-hash-table :test #'equal))
             (yt-select--videos (make-hash-table :test #'equal))
             (yt-vlc--process nil)
             (yt-info--queue (yt-process-queue-create 2))

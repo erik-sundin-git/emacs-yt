@@ -100,6 +100,8 @@ number of cookies and their domains."
     (with-current-buffer buffer
       (let ((inhibit-read-only t))
         (erase-buffer)
+        (insert (propertize "This report holds no cookies, tokens or video titles; its file names show your user name.\n\n"
+                            'face 'shadow))
         (yt-doctor--heading "Programs")
         (yt-doctor--insert "yt" yt-version)
         (yt-doctor--insert "Emacs" emacs-version)
@@ -140,7 +142,8 @@ number of cookies and their domains."
         (yt-doctor--heading "Sign-in")
         (let ((profile (yt-auth-profile)))
           (yt-doctor--insert "Chromium profile"
-                             (if profile (yt-auth-profile-label profile)
+                             ;; Not its display name, often the owner's name.
+                             (if profile (format "‘%s’" profile)
                                "not chosen (M-x yt-login)")
                              (if profile 'success 'warning)))
         (yt-doctor--cookie-file)

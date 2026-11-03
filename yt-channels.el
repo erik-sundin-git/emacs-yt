@@ -224,7 +224,8 @@ They are computed from the cached subscription feed."
 (defun yt-channels-filter (query)
   "Show only the channels with QUERY in their name.
 An empty QUERY shows all channels."
-  (interactive (list (read-string "Filter channels: " yt-channels--query))
+  (interactive (list (read-string "Filter channels: " yt-channels--query
+                                  (yt-minibuffer-history 'yt-filter-history)))
                yt-channels-mode)
   (setq yt-channels--query (and (not (string-blank-p query)) query))
   (yt-channels--print))
