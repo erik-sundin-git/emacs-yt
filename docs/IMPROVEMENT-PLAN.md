@@ -381,23 +381,15 @@ options; the items below add about 550 lines and two options.
   decode every cached video of every playlist on each print; one
   `GROUP BY` query, and the same for the channel statistics.
 
-### M14: your account and channels (third; about 1 session)
+### M14: channels (third; small)
 
-- **14.1 Watch Later, Liked and your YouTube playlists (M, read-only).**
-  As planned: yt-dlp's `:ytwatchlater`, `:ytfav` and `feed/playlists`; a
-  source `(account KIND)`; `C-c y a`.  Its auth source must not treat
-  empty output as expired at all: 8.4 now reports an empty feed after a
-  fresh export as "no videos", but only after a re-export, which may ask
-  for the keyring; an empty Watch Later is normal.  The
-  `playlist_channel` fallback is off for these sources.  Checked once
-  with the smoke test's setup.
 - **14.2 Mute channels (S-M).**  An additive `channel_prefs` table, after
   11.1; muted channels hidden from the feed by default, `t m` shows them.
   The key is `x` ("exclude") in the feed and the channels list, not `M`,
   which 13.1 takes for audio.  Shorts have no channel, so muting cannot
   hide them.
-- **14.3 Streams and Shorts tabs (S).**  `T` in a channel cycles videos,
-  streams and shorts; a missing tab is an empty list.
+- **14.3 Streams tab (S).**  `T` in a channel switches between its
+  videos and its past streams; a missing tab is an empty list.
 
 ### M13: playback (fourth; about half a session; decision 4)
 
@@ -447,6 +439,9 @@ With a reason each; any can come back on request.
 - **Brand accounts:** subscribe sends `X-Goog-AuthUser: 0` and no
   `X-Goog-PageId` (yt-subscribe.el:128); document it.
 - **Two Emacs processes** racing on the cookie file.
+- **Watch Later, Liked and your own YouTube playlists (was 14.1):** not
+  wanted for now (2026-11-03).  If they come back: an auth source on
+  which empty output is fine, and no `playlist_channel` fallback.
 - **Pruning the cache (was 11.3):** the sandbox's database is 388 KB
   after weeks of use; at about 100 new videos a day the real one grows
   some 10 MB a year.  Worth doing when the doctor's size (11.1) says so.
@@ -467,6 +462,7 @@ With a reason each; any can come back on request.
 - org-protocol, a consult buffer source, embark channel and playlist
   targets, coverage reports, broad hook renames.
 - A fullscreen toggle (was 13.3): mpv's own `f` does it in its window.
+- A channel's Shorts tab (part of 14.3): not wanted.
 
 ## Decisions for you
 
