@@ -194,6 +194,15 @@ with a usage error.  This runs without cookies or network access."
             (count (lambda (sql) (caar (sqlite-select (yt-cache-db) sql)))))
         (yt-doctor--insert "Cache" file)
         (yt-doctor--insert "  mode" (format "%o" modes) (if (= modes #o600) 'success 'error))
+        (yt-doctor--insert "  schema" (format "version %s" (funcall count "PRAGMA user_version")))
+        (yt-doctor--insert "  size" (file-size-human-readable
+                                    (file-attribute-size (file-attributes file))))
+        (yt-doctor--insert "  backups"
+                           (let ((backups (yt-cache--backup-files file)))
+                             (if backups
+                                 (format "%d, the newest %s" (length backups)
+                                         (abbreviate-file-name (car backups)))
+                               "none (M-x yt-cache-backup)")))
         (yt-doctor--insert "  videos"
                            (format "%d, %d watched, %d in the subscription feed"
                                    (funcall count "SELECT count(*) FROM videos")

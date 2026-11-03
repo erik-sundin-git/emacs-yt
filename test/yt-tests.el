@@ -174,6 +174,7 @@ comment autoloads whatever comes next instead."
 
 (defconst yt-test-mx-only-commands
   '(yt-check-auth yt-debug-fetch-feed yt-forget-history yt-logout yt-player-mode
+    yt-cache-backup
     yt-subscribe-browse yt-subscriptions yt-feed-subscriptions yt-url-handler-mode
     ;; Reached through + and - in feeds.
     yt-feed-save-playlist yt-feed-forget-playlist yt-subscribe yt-unsubscribe)

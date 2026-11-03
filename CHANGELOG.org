@@ -1,6 +1,14 @@
 #+title: yt changelog
 
 * Unreleased
+- The cache is safer to keep:
+  - Before yt changes the cache's format, it writes a copy next to it
+    (=yt.sqlite.backup-…=, the newest three kept); =M-x yt-cache-backup=
+    writes one at any time.
+  - The cache records the oldest yt that can read it, so after a Home
+    Manager rollback an older yt opens a cache a newer one only added
+    to, instead of refusing it.
+  - =yt-doctor= shows the cache's schema version, size and backups.
 
 * 0.3.0 (2026-11-03)
 ** Keys that changed

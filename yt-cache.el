@@ -60,6 +60,15 @@ and :url, and non-nil if you are now subscribed.")
 (defconst yt-cache--schema-version 4
   "Version of the cache schema, stored as SQLite's user_version.")
 
+(defconst yt-cache--min-reader-version 4
+  "The oldest schema version whose code can use a cache of this version.
+It is kept in the cache's meta table as \"min_reader\".  A version that
+only adds tables or columns keeps it, so that after a rollback an older
+yt still opens the cache; one that changes what is there raises it.")
+
+(defvar yt-cache-backups 3
+  "Number of cache backups `yt-cache-backup' keeps.")
+
 (eval-and-compile
   (defconst yt-cache--fields
     '(id title channel channel-id channel-url duration timestamp
@@ -104,7 +113,41 @@ Version 2 added the channels table, version 3 the playlists table."
                    id TEXT PRIMARY KEY, played_at INTEGER NOT NULL)"
                  "CREATE INDEX IF NOT EXISTS history_order ON history (played_at)"))
     (sqlite-execute db sql))
-  (sqlite-execute db (format "PRAGMA user_version = %d" yt-cache--schema-version)))
+  (sqlite-execute db (format "PRAGMA user_version = %d" yt-cache--schema-version))
+  (sqlite-execute db "INSERT OR REPLACE INTO meta (key, value) VALUES ('min_reader', ?)"
+                  (list yt-cache--min-reader-version)))
+
+(defun yt-cache--backup-files (file)
+  "Return the backups of the cache FILE, the newest first."
+  (sort (file-expand-wildcards (concat file ".backup-*")) #'string>))
+
+(defun yt-cache--write-backup (db file)
+  "Write a copy of DB, the cache FILE, next to it; return its name.
+Only `yt-cache-backups' backups are kept."
+  (let ((backup (format "%s.backup-%s" file (format-time-string "%Y%m%d-%H%M%S"))))
+    (with-file-modes #o600
+      (sqlite-execute db (format "VACUUM INTO '%s'" (string-replace "'" "''" backup))))
+    (set-file-modes backup #o600)
+    (dolist (old (nthcdr yt-cache-backups (yt-cache--backup-files file)))
+      (ignore-errors (delete-file old)))
+    backup))
+
+(defun yt-cache-backup ()
+  "Write a copy of the cache next to it, keeping `yt-cache-backups' of them.
+It holds the watch history, the resume positions and the saved
+playlists.  yt also does this before it changes the cache's format."
+  (interactive)
+  (let ((backup (yt-cache--write-backup (yt-cache-db) (yt-cache-file-name))))
+    (when (called-interactively-p 'any)
+      (message "Wrote %s" (abbreviate-file-name backup)))
+    backup))
+
+(defun yt-cache--readable-p (db)
+  "Return non-nil if this yt can use DB, written by a newer one.
+That is when the newer schema says its min_reader is ours or older."
+  (let ((min (ignore-errors
+               (caar (sqlite-select db "SELECT value FROM meta WHERE key = 'min_reader'")))))
+    (and (numberp min) (<= min yt-cache--schema-version))))
 
 (defun yt-cache--open (file)
   "Open the cache database FILE, creating it with mode 0600 if needed."
@@ -120,10 +163,14 @@ Version 2 added the channels table, version 3 the playlists table."
         (progn
           (sqlite-pragma db "busy_timeout = 3000")
           (sqlite-pragma db "journal_mode = WAL")
-          (sqlite-execute db "BEGIN IMMEDIATE")
           (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
+            ;; A copy first, whenever an existing cache changes format.
+            (when (< 0 version yt-cache--schema-version)
+              (yt-cache--write-backup db file))
+            (sqlite-execute db "BEGIN IMMEDIATE")
             (cond ((< version yt-cache--schema-version) (yt-cache--create-schema db))
-                  ((> version yt-cache--schema-version)
+                  ((and (> version yt-cache--schema-version)
+                        (not (yt-cache--readable-p db)))
                    (user-error "The yt cache %s was written by a newer yt" file))))
           (sqlite-execute db "COMMIT")
           db)

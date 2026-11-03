@@ -50,13 +50,73 @@
                                    db "SELECT name FROM sqlite_master WHERE type = 'table'"))))))
 
 (ert-deftest yt-cache-refuses-newer-schema ()
-  "A cache written by a newer yt is refused rather than changed."
+  "A newer cache that needs a newer yt is refused rather than changed."
   (yt-test-with-scenario (_ _)
     (yt-cache-db)
     (sqlite-execute (yt-cache-db) "PRAGMA user_version = 99")
+    (sqlite-execute (yt-cache-db) "UPDATE meta SET value = 99 WHERE key = 'min_reader'")
     (yt-cache-close)
     (should-error (yt-cache-db) :type 'user-error)
     (should-not yt-cache--db)))
+
+(ert-deftest yt-cache-opens-newer-additive-schema ()
+  "After a rollback, a newer cache that only added tables still opens."
+  (yt-test-with-scenario (_ _)
+    (yt-cache-put-videos (list (yt-video--make :id "aaaaaaaaaaa" :title "Kept")))
+    (sqlite-execute (yt-cache-db) "CREATE TABLE future (x)")
+    (sqlite-execute (yt-cache-db) "PRAGMA user_version = 5")
+    (yt-cache-close)
+    (should (equal (yt-video-title (yt-cache-get "aaaaaaaaaaa")) "Kept"))
+    ;; Left as the newer yt wrote it.
+    (should (= (caar (sqlite-select (yt-cache-db) "PRAGMA user_version")) 5))))
+
+(ert-deftest yt-cache-migrates-old-schemas-with-a-backup ()
+  "A cache of an older schema is copied first, and keeps its data."
+  (yt-test-with-scenario (_ _)
+    (let ((file (yt-cache-file-name)))
+      ;; A version 3 cache: no history table, no min_reader.
+      (yt-ensure-state-directory)
+      (let ((db (sqlite-open file)))
+        (dolist (sql '("CREATE TABLE videos (id TEXT PRIMARY KEY, data TEXT NOT NULL,
+                         fetched_at INTEGER, watched INTEGER NOT NULL DEFAULT 0, position REAL)"
+                       "CREATE TABLE feed (source TEXT NOT NULL, id TEXT NOT NULL,
+                         pos INTEGER NOT NULL, PRIMARY KEY (source, id))"
+                       "CREATE TABLE meta (key TEXT PRIMARY KEY, value)"
+                       "CREATE TABLE channels (id TEXT PRIMARY KEY, pos INTEGER NOT NULL, data TEXT NOT NULL)"
+                       "CREATE TABLE playlists (id TEXT PRIMARY KEY, saved_at INTEGER NOT NULL, data TEXT NOT NULL)"
+                       "INSERT INTO videos VALUES ('aaaaaaaaaaa', '{\"id\":\"aaaaaaaaaaa\"}', 1, 1, 61.5)"
+                       "INSERT INTO playlists VALUES ('PLfake', 1, '{\"id\":\"PLfake\",\"title\":\"T\"}')"
+                       "PRAGMA user_version = 3"))
+          (sqlite-execute db sql))
+        (sqlite-close db))
+      (set-file-modes file #o600)
+      (let ((video (yt-cache-get "aaaaaaaaaaa")))
+        (should (yt-video-watched video))
+        (should (= (yt-video-position video) 61.5)))
+      (should (yt-cache-playlist-saved-p "PLfake"))
+      (should (= (caar (sqlite-select (yt-cache-db) "PRAGMA user_version"))
+                 yt-cache--schema-version))
+      (should (equal (yt-cache-meta "min_reader") yt-cache--min-reader-version))
+      (yt-cache-add-history (yt-video--make :id "aaaaaaaaaaa"))
+      (let ((backups (yt-cache--backup-files file)))
+        (should (= (length backups) 1))
+        (should (= (file-modes (car backups)) #o600))
+        ;; The backup is the version 3 cache, as it was.
+        (let ((db (sqlite-open (car backups))))
+          (unwind-protect
+              (should (= (caar (sqlite-select db "PRAGMA user_version")) 3))
+            (sqlite-close db)))))))
+
+(ert-deftest yt-cache-backup-keeps-a-few ()
+  "`yt-cache-backup' writes a private copy and keeps the newest ones."
+  (yt-test-with-scenario (_ _)
+    (let ((yt-cache-backups 2)
+          (n 0))
+      (cl-letf (((symbol-function 'format-time-string)
+                 (lambda (&rest _) (format "2026110%d-000000" (cl-incf n)))))
+        (dotimes (_ 3) (yt-cache-backup)))
+      (should (equal (mapcar (lambda (f) (substring f -15)) (yt-cache--backup-files (yt-cache-file-name)))
+                     '("20261103-000000" "20261102-000000"))))))
 
 (ert-deftest yt-cache-round-trip-and-reopen ()
   "Videos survive closing and reopening the cache, as after a restart."
