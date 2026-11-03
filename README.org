@@ -190,6 +190,22 @@ off.  yt asks SponsorBlock with curl while it resolves the streams, so
 playback does not wait for it; when it cannot be reached, the video plays
 without skipping.  VLC skips nothing: Emacs does not control it.
 
+* YouTube links elsewhere in Emacs
+With =(yt-url-handler-mode 1)= in your init file, =browse-url= opens YouTube
+links in yt: a video plays in mpv, from the link's =t== time if it has one,
+and a playlist or channel opens in a yt buffer.  That covers links in mail
+(notmuch, gnus), org, help and most other buffers; eww passes only the
+links matching =eww-use-browse-url= to =browse-url=.  With a prefix
+argument, or when yt cannot open a link, the browser gets it as before.
+yt's own "open in browser" commands (=b=) never go through the handler.
+=yt-play-url= also starts at a link's =t== time.
+
+Links come from text you did not write, so yt accepts only the YouTube
+hosts, rebuilds a clean URL from the video, playlist or channel id
+(dropping tracking parameters such as =si==), and never hands the link
+itself to yt-dlp.  With =yt-player-youtube-history= on, a video you open
+from a link is added to your YouTube history like any other you play.
+
 * The mpv window
 mpv opens its own window with the Wayland app id =emacs-yt=, so window
 managers can place it.  For sway, for example:

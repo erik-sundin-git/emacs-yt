@@ -47,6 +47,7 @@
 (require 'yt-auth)
 (require 'yt-cache)
 (require 'yt-list)
+(require 'yt-url)
 
 (defvar yt-player-available-margin 1.0
   "Seconds to wait after the time YouTube releases the streams.")
@@ -503,10 +504,12 @@ queue videos."
 
 ;;;###autoload
 (defun yt-play-url (url)
-  "Play the YouTube video at URL."
+  "Play the YouTube video at URL, from its t= time if it has one."
   (interactive (list (yt-video-url (yt-player--read-url))))
-  (yt-play (or (yt-video-from-url url)
-               (user-error "Not a YouTube video URL: %s" url))))
+  (let ((video (or (yt-video-from-url url)
+                   (user-error "Not a YouTube video URL: %s" url)))
+        (start (plist-get (cdr (yt-url-parse url)) :start)))
+    (if start (yt-play-at video start) (yt-play video))))
 
 ;;;###autoload
 (defun yt-player-stop ()
@@ -850,7 +853,7 @@ Without a region, move to the next row."
 (defun yt-browse-video ()
   "Open the video at point in a web browser."
   (interactive)
-  (browse-url (yt-video-url (car (yt-selected-videos)))))
+  (yt-browse-url (yt-video-url (car (yt-selected-videos)))))
 
 (defun yt-copy-video-url ()
   "Copy the URL of the video at point to the kill ring."

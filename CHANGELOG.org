@@ -1,6 +1,13 @@
 #+title: yt changelog
 
 * Unreleased
+- =yt-url-handler-mode= opens YouTube links in yt: from mail, org or help
+  buffers, a video plays in mpv (from its =t== time) and a playlist or
+  channel opens in yt; =C-u= still opens the browser.  Links are parsed
+  strictly (YouTube hosts only, canonical URLs rebuilt from the ids).
+  =yt-play-url= honours =t==.  yt's own "open in browser" commands, and
+  the Chromium fallback of subscribing, accept only YouTube links and
+  pass them after =--=.
 - mpv knows a video's chapters (it runs without its own yt-dlp hook, so it
   had none): =C-c y .= and =C-c y ,= go to the next and previous chapter,
   and repeat without the prefix.

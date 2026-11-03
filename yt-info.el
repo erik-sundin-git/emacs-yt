@@ -160,7 +160,7 @@ See `yt-info--details'."
                                      (yt-video-format-duration (yt-video-position cached))))
                             (t "no"))))
     (insert (propertize (format "%-11s" "URL") 'face 'yt-info-label))
-    (insert-text-button (yt-video-url video) 'action (lambda (_) (browse-url (yt-video-url video)))
+    (insert-text-button (yt-video-url video) 'action (lambda (_) (yt-browse-url (yt-video-url video)))
                         'help-echo "Open in a web browser")
     (insert "\n")
     (pcase yt-info--status

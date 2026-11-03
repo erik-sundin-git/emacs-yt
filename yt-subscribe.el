@@ -255,6 +255,8 @@ sends it again.  ON-SUCCESS and ON-ERROR are as for
 That profile is signed in to your YouTube account, unlike the
 browser `browse-url' may choose."
   (interactive (list (nth 1 (yt-channel-at-point))))
+  (unless (yt-url-parse url)
+    (user-error "Not a YouTube link: %s" url))
   (let ((profile (or (yt-auth-profile)
                      (user-error "No Chromium profile chosen: run M-x yt-login")))
         (process-environment (append (yt-player-display-environment)
@@ -263,7 +265,8 @@ browser `browse-url' may choose."
         (call-process yt-chromium-program nil 0 nil
                       (concat "--user-data-dir=" (expand-file-name yt-chromium-directory))
                       (concat "--profile-directory=" profile)
-                      url)
+                      ;; Nothing after this is read as an option.
+                      "--" url)
       (file-error
        (user-error "%s not found: set `yt-chromium-program'" yt-chromium-program)))))
 

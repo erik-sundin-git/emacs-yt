@@ -204,7 +204,7 @@ They are computed from the cached subscription feed."
 (defun yt-channels-browse (channel)
   "Open the page of CHANNEL, the channel at point, in a web browser."
   (interactive (list (yt-channels--at-point)) yt-channels-mode)
-  (browse-url (plist-get channel :url)))
+  (yt-browse-url (plist-get channel :url)))
 
 (defun yt-channels-unsubscribe (channel)
   "Unsubscribe from CHANNEL, the channel at point, after confirmation."

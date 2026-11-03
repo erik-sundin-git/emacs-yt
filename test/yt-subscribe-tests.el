@@ -253,12 +253,12 @@ With SUBSCRIBED `yes' or `no', the response confirms that state."
                    0))
                 ((symbol-function 'yt-player-display-environment)
                  (lambda () '("WAYLAND_DISPLAY=wayland-9"))))
-        (yt-subscribe-browse "https://www.youtube.com/channel/x"))
+        (yt-subscribe-browse "https://www.youtube.com/@fake"))
       (should (equal call
                      (list (list "fake-chromium" nil 0 nil
                                  (concat "--user-data-dir=" yt-chromium-directory)
                                  "--profile-directory=Profile 1"
-                                 "https://www.youtube.com/channel/x")
+                                 "--" "https://www.youtube.com/@fake")
                            "wayland-9"))))))
 
 (ert-deftest yt-subscribe-feed-keys ()

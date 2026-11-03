@@ -1131,6 +1131,7 @@ this buffer shows, or the channel at point in the channels list."
           (list (plist-get channel :id) (plist-get channel :url) (plist-get channel :name))))
       (user-error "No channel here")))
 
+;;;###autoload
 (defun yt-feed-playlist (id url title)
   "Show the videos of the playlist TITLE with ID and URL, in its order."
   (yt-feed--show (list 'playlist id url title) (format "*yt: Playlist: %s*" title)))

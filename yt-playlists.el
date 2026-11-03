@@ -211,7 +211,7 @@ once its videos arrive."
 (defun yt-playlists-browse (playlist)
   "Open PLAYLIST, the playlist at point, in a web browser."
   (interactive (list (yt-playlists--at-point)) yt-playlists-mode)
-  (browse-url (plist-get playlist :url)))
+  (yt-browse-url (plist-get playlist :url)))
 
 (defun yt-playlists-filter (query)
   "Show only the playlists with QUERY in their title or channel.
