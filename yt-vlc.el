@@ -90,7 +90,7 @@ A running VLC is closed first.  VIDEO is marked watched."
          (args (yt-vlc-args streams start))
          (buffer (generate-new-buffer " *yt-vlc*")))
     (yt-process-log "%s %s" yt-vlc-program
-                    (mapconcat #'yt-player--redact args " "))
+                    (mapconcat #'yt-player-redact args " "))
     (setq yt-vlc--process
           (make-process :name "yt-vlc" :buffer buffer
                         :command (cons yt-vlc-program args)
@@ -99,7 +99,7 @@ A running VLC is closed first.  VIDEO is marked watched."
     (when (yt-video-id video)
       (yt-mark-watched video))
     (yt-player-started video)
-    (message "Playing “%s” in VLC" (yt-player--title video))))
+    (message "Playing “%s” in VLC" (yt-player-title video))))
 
 (cl-defmethod yt-player-backend-stop ((_backend (eql 'vlc)))
   "Close VLC."

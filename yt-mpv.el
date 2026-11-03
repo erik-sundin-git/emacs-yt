@@ -486,7 +486,7 @@ once per entry."
 
 (defun yt-mpv--log-message (message)
   "Keep the mpv log MESSAGE, without stream URLs."
-  (push (yt-player--redact (format "%s: %s" (plist-get message :prefix)
+  (push (yt-player-redact (format "%s: %s" (plist-get message :prefix)
                                    (string-trim-right (or (plist-get message :text) ""))))
         yt-mpv--log)
   (when (nthcdr yt-mpv-log-size yt-mpv--log)
@@ -499,18 +499,18 @@ URLs expire after some hours, which breaks queued entries."
   (let ((video (yt-mpv--entry-video entry))
         (pos (and (not (yt-mpv--entry-live-p entry)) (yt-mpv--entry-pos entry)))
         (instance yt-mpv--instance))
-    (message "Playing “%s” failed; resolving it again..." (yt-player--title video))
+    (message "Playing “%s” failed; resolving it again..." (yt-player-title video))
     ;; Its kept streams may be the ones that failed.
     (yt-player-forget-streams video)
     (yt-player-resolve
      video
      (lambda (streams _info)
-       (yt-player--when-available
+       (yt-player-when-available
         streams
         (lambda ()
           (when (yt-mpv--current-p instance)
             (yt-mpv--reload-in-place id video streams (and pos (floor pos)) t)))))
-     #'yt-player--failed
+     #'yt-player-report-failure
      :key '(yt-mpv . retry))))
 
 (defun yt-mpv--end-file (id reason file-error)
@@ -524,7 +524,7 @@ URLs expire after some hours, which breaks queued entries."
      ((equal reason "error")
       (yt-player-log "mpv could not play %s: %s"
                      (if-let* ((video (and entry (yt-mpv--entry-video entry))))
-                         (format "“%s”" (yt-player--title video))
+                         (format "“%s”" (yt-player-title video))
                        (format "entry %s" id))
                      (or file-error "unknown error"))
       (dolist (line (reverse yt-mpv--log))
@@ -578,11 +578,9 @@ URLs expire after some hours, which breaks queued entries."
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))
     (yt-mpv--reset)
-    (yt-player--shuffle-stop)
+    (yt-player-backend-exited 'mpv)
     (setq yt-mpv--process nil
           yt-mpv--socket nil)
-    (when (eq yt-player--current-backend 'mpv)
-      (setq yt-player--current-backend nil))
     (yt-player-update-mode-line nil)
     (message "mpv exited")))
 
@@ -626,7 +624,7 @@ the playlist index for the flags \"insert-at\"."
   (when (yt-video-id video)
     (yt-cache-put-videos (list video)))
   (let ((instance yt-mpv--instance)
-        (title (yt-player--title video)))
+        (title (yt-player-title video)))
     (yt-mpv-send
      (yt-mpv-loadfile-command streams flags start title index)
      (lambda (data error)
@@ -719,6 +717,12 @@ Start at START seconds.  The rest of the playlist stays as it is:
      (message "Skipping SponsorBlock segments: %s" (if yt-mpv--skipping "on" "off")))
     (_ (cl-call-next-method))))
 
+(cl-defmethod yt-player-backend-now-playing ((_backend (eql 'mpv)))
+  "Return (VIDEO . POSITION) of what mpv plays, or nil."
+  (when-let* ((entry (and yt-mpv--current (gethash yt-mpv--current yt-mpv--entries)))
+              (video (yt-mpv--entry-video entry)))
+    (cons video (yt-mpv--entry-pos entry))))
+
 (cl-defmethod yt-player-backend-playlist ((_backend (eql 'mpv)) callback)
   "Call CALLBACK with mpv's playlist."
   (unless (yt-mpv--process-alive-p)
@@ -736,7 +740,7 @@ Start at START seconds.  The rest of the playlist stays as it is:
                                 (video (and entry (yt-mpv--entry-video entry))))
                            (list :index index :id (plist-get item :id)
                                  :current (and (plist-get item :current) t)
-                                 :title (or (and video (yt-player--title video))
+                                 :title (or (and video (yt-player-title video))
                                             (plist-get item :title) "…")
                                  :video video))))))))
 

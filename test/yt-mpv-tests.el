@@ -493,6 +493,17 @@ A sleeping process stands in for mpv."
                      '("add" "chapter" 1)))
       (should (eq (keymap-lookup yt-map ".") #'yt-player-next-chapter)))))
 
+(ert-deftest yt-mpv-now-playing ()
+  "`yt-player-now-playing' names the video mpv plays and its position."
+  (yt-mpv-test--with-mpv (_ytdlp _mpv)
+    (let* ((server (yt-mpv-test--connect))
+           (video (yt-mpv-test--video "videonow001")))
+      (should-not (yt-player-now-playing))
+      (setq yt-player--current-backend 'mpv)
+      (yt-mpv-test--play-through server (yt-mpv-test--load server video) :time-pos 42.5)
+      (yt-test-wait-until (lambda () (cdr (yt-player-now-playing))) "position")
+      (should (equal (yt-player-now-playing) (cons video 42.5))))))
+
 (ert-deftest yt-mpv-entries-are-tracked-by-id ()
   "The same video queued twice is followed as two entries."
   (yt-mpv-test--with-mpv (_ytdlp _mpv)

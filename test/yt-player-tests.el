@@ -109,11 +109,11 @@ directory of the fake yt-dlp and to the fake VLC's directory."
 
 (ert-deftest yt-player-redacts-stream-urls ()
   "Stream URLs never reach the player log."
-  (should (equal (yt-player--redact
+  (should (equal (yt-player-redact
                   "vlc https://rr1---x.googlevideo.com/videoplayback?a=1&b=2 done")
                  "vlc <stream URL> done"))
   ;; VLC also prints locations without the scheme, in quotes.
-  (should (equal (yt-player--redact
+  (should (equal (yt-player-redact
                   "demux: location='rr4---x.googlevideo.com/videoplayback?expire=1&ip=2'")
                  "demux: location='<stream URL>'")))
 
@@ -234,7 +234,7 @@ directory of the fake yt-dlp and to the fake VLC's directory."
   (let ((yt-player-available-margin 0.0)
         (start (float-time))
         called)
-    (yt-player--when-available (list :available-at (+ start 0.4))
+    (yt-player-when-available (list :available-at (+ start 0.4))
                                (lambda () (setq called (float-time))))
     ;; Not at once; and whenever it runs, not before the release time
     ;; (a sleep here would fail on a busy machine).
@@ -243,7 +243,7 @@ directory of the fake yt-dlp and to the fake VLC's directory."
     (should (>= (- called start) 0.4))
     ;; Without a release time, or with one in the past, at once.
     (setq called nil)
-    (yt-player--when-available (list :available-at (- start 100))
+    (yt-player-when-available (list :available-at (- start 100))
                                (lambda () (setq called t)))
     (yt-test-wait-until (lambda () called) "past release")))
 

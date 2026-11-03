@@ -24,6 +24,19 @@
 ;; (VLC in yt-vlc.el, mpv in yt-mpv.el) is a symbol with methods for
 ;; the `yt-player-backend-*' generic functions below; `yt-player-backend' picks one.
 ;;
+;; A backend must have `yt-player-backend-check' and
+;; `yt-player-backend-play', and may have `-prepare' (called while the
+;; streams are resolved), `-enqueue', `-stop', `-command', `-playlist'
+;; and `-now-playing'.  The commands `yt-player-backend-command' gets
+;; are `pause', `seek' (seconds, relative), `speed' (a factor, or nil
+;; for normal), `next', `previous', `quit', `shuffle', `play-index'
+;; and `remove' (a queue index), `chapter' (+1 or -1), `unskip' and
+;; `toggle-skipping'; a backend signals a `user-error' for the others.
+;; When a video starts, a backend calls `yt-player-started'; when the
+;; player exits, `yt-player-backend-exited'.  `yt-player-title',
+;; `yt-player-report-failure', `yt-player-redact' and
+;; `yt-player-when-available' are for backends too.
+;;
 ;; Players never talk to YouTube themselves.  yt resolves the stream
 ;; URLs with yt-dlp (`yt-player-resolve'), using the signed-in cookies,
 ;; then waits until YouTube releases the streams: yt-dlp reports an
@@ -96,6 +109,22 @@ The playlist is a list of plists with :index (from 0), :id, :title,
 :current and :video, the `yt-video' or nil."
   (user-error "The %s player has no playlist" backend))
 
+(cl-defgeneric yt-player-backend-now-playing (_backend)
+  "Return (VIDEO . POSITION) of what BACKEND plays, or nil.
+POSITION is in seconds, or nil if not known."
+  nil)
+
+(defun yt-player-now-playing ()
+  "Return (VIDEO . POSITION) of the video playing, or nil."
+  (and yt-player--current-backend
+       (yt-player-backend-now-playing yt-player--current-backend)))
+
+(defun yt-player-backend-exited (backend)
+  "Note that the player of BACKEND exited: end a shuffle, forget it."
+  (yt-player--shuffle-stop)
+  (when (eq yt-player--current-backend backend)
+    (setq yt-player--current-backend nil)))
+
 (defvar yt-player-playlist-changed-hook nil
   "Hook run by backends when their playlist may have changed.")
 
@@ -167,7 +196,7 @@ is none."
 (defvar yt-url-history nil
   "History of the URLs typed at \\[yt-play-url].")
 
-(defun yt-player--redact (text)
+(defun yt-player-redact (text)
   "Return TEXT with stream URLs and credentials replaced by placeholders."
   (yt-process-redact text))
 
@@ -178,7 +207,7 @@ Stream URLs are left out."
     (let ((inhibit-read-only t))
       (goto-char (point-max))
       (insert (format-time-string "[%F %T] ")
-              (yt-player--redact (apply #'format format-string args)))
+              (yt-player-redact (apply #'format format-string args)))
       (unless (bolp) (insert "\n")))))
 
 ;;;###autoload
@@ -249,7 +278,7 @@ Each value is (EXPIRES . STREAMS).")
 
 (add-hook 'yt-auth-state-change-hook #'yt-player--auth-changed)
 
-(defun yt-player--title (video)
+(defun yt-player-title (video)
   "Return a short name for VIDEO, for messages."
   (or (yt-video-title video) (yt-video-id video)))
 
@@ -292,7 +321,7 @@ and not about to expire are used, and new ones are kept."
          (yt-player-resolve video callback on-error :format "b" :key key :cache cache)
        (funcall on-error err)))))
 
-(defun yt-player--when-available (streams fn &optional independent)
+(defun yt-player-when-available (streams fn &optional independent)
   "Call FN from a timer once YouTube releases STREAMS.
 That is `yt-player-available-margin' seconds after their
 :available-at time, or at once if they have none.  A new call
@@ -310,7 +339,7 @@ replaces a waiting one, unless either is INDEPENDENT."
                                      (setq yt-player--wait-timer nil)
                                      (funcall fn)))))))
 
-(defun yt-player--failed (err)
+(defun yt-player-report-failure (err)
   "Report the failed playback ERR, an error plist from `yt-player-resolve'."
   (unless (eq (plist-get err :type) 'cancelled)
     (yt-player-log "%s" (plist-get err :message))
@@ -334,7 +363,7 @@ Problems go to the player log, \[yt-player-show-log]."
       (let ((fail (lambda (why)
                     (remhash id yt-player--youtube-history-sent)
                     (yt-player-log "Could not add “%s” to the YouTube history: %s"
-                                   (yt-player--title video) why))))
+                                   (yt-player-title video) why))))
         (yt-auth-run
          (yt-ytdlp-mark-watched-args (yt-video-url video))
          :parse nil :key (cons 'yt-youtube-history id)
@@ -370,7 +399,7 @@ non-nil, to the YouTube history, then run
   "Resolve VIDEO and play it with BACKEND from START seconds."
   (yt-player--load backend)
   (yt-player-display-environment)
-  (message "Resolving “%s”..." (yt-player--title video))
+  (message "Resolving “%s”..." (yt-player-title video))
   (when (yt-video-id video)
     (puthash (yt-video-id video) (float-time) yt-player--asked))
   (yt-player--trace video "resolving")
@@ -380,14 +409,14 @@ non-nil, to the YouTube history, then run
    (lambda (streams _info)
      (yt-player--fill-video video streams)
      (yt-player--trace video "resolved")
-     (yt-player--when-available
+     (yt-player-when-available
       streams
       (lambda ()
         (yt-player--trace video (format "loading in %s" backend))
         (setq yt-player--current-backend backend)
         (yt-player-backend-play backend video streams :start start))))
    (lambda (err)
-     (yt-player--failed err)
+     (yt-player-report-failure err)
      (unless (eq (plist-get err :type) 'cancelled)
        (run-hook-with-args 'yt-player-resolve-failed-functions video)))
    ;; mpv resolves a video again when its streams fail; VLC cannot.
@@ -415,7 +444,7 @@ playlist in the order they were queued."
        video
        (lambda (streams _info)
          (yt-player--fill-video video streams)
-         (yt-player--when-available
+         (yt-player-when-available
           streams
           (lambda ()
             (unwind-protect
@@ -424,7 +453,7 @@ playlist in the order they were queued."
               (yt-player--queue-next)))
           t))
        (lambda (err)
-         (yt-player--failed err)
+         (yt-player-report-failure err)
          (run-hook-with-args 'yt-player-resolve-failed-functions video)
          (yt-player--queue-next))
        :key '(yt-player . enqueue) :cache (eq backend 'mpv)))))
