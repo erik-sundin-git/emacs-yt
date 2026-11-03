@@ -960,6 +960,7 @@ to the channel of the video at point."
   "t" (cons "toggle" yt-feed-toggle-map)
   "l" #'yt-channels
   "z" #'yt-feed-shuffle
+  "A" #'yt-feed-play-all-from-here
   "W" #'yt-feed-mark-all-watched
   "+" #'yt-feed-add
   "-" #'yt-feed-remove
@@ -1194,12 +1195,36 @@ this buffer shows, after confirmation; see `yt-unsubscribe'."
   "Play the videos shown in this buffer in random order in mpv.
 The filters apply: hidden videos are not played.  See `yt-player-shuffle'."
   (interactive nil yt-feed-mode)
-  (yt-player-shuffle (yt-feed--filtered-videos)
-                     (pcase yt-feed--source
-                       (`(playlist ,_ ,_ ,title) title)
-                       (`(channel ,_ ,_ ,name) name)
-                       (`(search ,query) query)
-                       (_ "the subscription feed"))))
+  (yt-player-shuffle (yt-feed--filtered-videos) (yt-feed--source-name)))
+
+(defun yt-feed--source-name ()
+  "Return a description of this buffer's videos."
+  (pcase yt-feed--source
+    (`(playlist ,_ ,_ ,title) title)
+    (`(channel ,_ ,_ ,name) name)
+    (`(search ,query) query)
+    (_ "the subscription feed")))
+
+(defun yt-feed-play-all-from-here ()
+  "Play the unwatched videos shown from point down, in order, in mpv.
+The filters and the sort order apply.  Two are kept queued ahead; see
+`yt-player-play-sequence'."
+  (interactive nil yt-feed-mode)
+  (unless (yt-feed-video-at-point)
+    (user-error "No video here"))
+  ;; The rows as shown, which may be sorted by a column.
+  (let ((videos (save-excursion
+                  (beginning-of-line)
+                  (let (videos)
+                    (while (not (eobp))
+                      (when-let* ((video (yt-feed-video-at-point)))
+                        (unless (yt-video-watched video)
+                          (push video videos)))
+                      (forward-line 1))
+                    (nreverse videos)))))
+    (unless videos
+      (user-error "No unwatched videos from here on"))
+    (yt-player-play-sequence videos (yt-feed--source-name))))
 
 (defvar yt-search-history nil
   "History of `yt-search' queries.")

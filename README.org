@@ -131,6 +131,7 @@ the info and playlist buffers):
 | =l=           | the channels                                             |
 | =+= / =-=     | subscribe to / unsubscribe from the channel at hand; in a playlist: save it in yt / forget it |
 | =z=           | play the videos shown in random order, in mpv            |
+| =A=           | play the unwatched videos shown from point down, in order |
 | =L=           | sign in                                                  |
 | =S=           | sort by the column at point (tabulated-list)             |
 

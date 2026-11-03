@@ -311,6 +311,23 @@ YTDLP is bound to the scenario directory of the fake yt-dlp."
           (funcall (lookup-key overriding-terminal-local-map "u"))
           (should-not (seq-some (lambda (id) (yt-video-watched (yt-cache-get id))) shown)))))))
 
+(ert-deftest yt-feed-play-all-from-here ()
+  "\\`A' plays the unwatched videos shown from point down, in order."
+  (yt-feed-test--with-feed ytdlp
+    (yt-test-step ytdlp 1 :out (yt-test-fixture-string "feed.ndjson"))
+    (with-current-buffer (yt-feed-test--open)
+      (should (eq (keymap-lookup yt-feed-mode-map "A") #'yt-feed-play-all-from-here))
+      (yt-mark-watched (yt-cache-get "fakevideo03"))
+      (let (played)
+        (cl-letf (((symbol-function 'yt-player-play-sequence)
+                   (lambda (videos name &optional shuffle)
+                     (setq played (list (mapcar #'yt-video-id videos) name shuffle)))))
+          (goto-char (gethash "fakevideo02" (yt-feed--row-positions)))
+          (yt-feed-play-all-from-here))
+        (should (equal played (list (remove "fakevideo03"
+                                            (member "fakevideo02" yt-feed-test--fixture-ids))
+                                    "the subscription feed" nil)))))))
+
 (ert-deftest yt-feed-full-refresh-cancels-running-one ()
   "\\[yt-feed-refresh-all] cancels a running refresh and fetches everything."
   (yt-feed-test--with-feed ytdlp

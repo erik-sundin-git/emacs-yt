@@ -589,13 +589,19 @@ End the shuffle once every video started."
 
 (defun yt-player-shuffle (videos &optional name)
   "Play VIDEOS in random order in mpv; NAME describes them.
-One video plays at once and `yt-player-shuffle-ahead' more wait in
-mpv's playlist; each time one starts, the next is resolved, so a long
-playlist does not send YouTube a request per video at once.  Upcoming
-streams are left out.  Playing another video ends the shuffle."
+See `yt-player-play-sequence'."
+  (yt-player-play-sequence videos name t))
+
+(defun yt-player-play-sequence (videos &optional name shuffle)
+  "Play VIDEOS one after the other in mpv; NAME describes them.
+With SHUFFLE non-nil, play them in random order.  One video plays at
+once and `yt-player-shuffle-ahead' more wait in mpv's playlist; each
+time one starts, the next is resolved, so a long playlist does not
+send YouTube a request per video at once.  Upcoming streams are left
+out.  Playing another video ends the sequence."
   (yt-player--load 'mpv)
   (let* ((seen (make-hash-table :test #'equal))
-         (videos (funcall yt-player-shuffle-function
+         (videos (funcall (if shuffle yt-player-shuffle-function #'identity)
                           (seq-filter (lambda (video)
                                         (and (yt-video-id video)
                                              (not (eq (yt-video-live-status video) 'is_upcoming))
@@ -613,8 +619,8 @@ streams are left out.  Playing another video ends the shuffle."
       (add-hook 'yt-player-file-started-functions #'yt-player--shuffle-advance)
       (add-hook 'yt-player-resolve-failed-functions #'yt-player--shuffle-advance)
       (yt-player--start 'mpv (car videos) (yt-player--resume-position (car videos)))
-      (message "Shuffling %d videos%s" (length videos)
-               (if name (format " of “%s”" name) "")))))
+      (message "%s %d videos%s" (if shuffle "Shuffling" "Playing")
+               (length videos) (if name (format " of “%s”" name) "")))))
 
 ;;;###autoload
 (defun yt-player-shuffle-playlist ()
