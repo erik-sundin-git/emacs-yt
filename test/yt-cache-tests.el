@@ -263,5 +263,44 @@
     (yt-cache-set-meta "k" 2)
     (should (= (yt-cache-meta "k") 2))))
 
+(ert-deftest yt-cache-sets-a-damaged-cache-aside ()
+  "A cache that is not a database is kept aside, and a fresh one opens."
+  (yt-test-with-scenario (_ _)
+    (yt-cache-put-videos (list (yt-video--make :id "aaaaaaaaaaa" :title "Old")))
+    (yt-cache-backup)
+    (yt-cache-close)
+    (let ((file (yt-cache-file-name))
+          warnings)
+      (with-temp-file file
+        (set-buffer-multibyte nil)
+        (dotimes (_ 8192) (insert (random 256))))
+      (cl-letf (((symbol-function 'display-warning)
+                 (lambda (_type message &rest _) (push message warnings))))
+        (should-not (yt-cache-get "aaaaaaaaaaa")))
+      (should (string-match-p "damaged and is kept as .*\\.damaged-" (car warnings)))
+      (should (string-match-p "copy .*\\.backup-" (car warnings)))
+      (let ((damaged (file-expand-wildcards (concat file ".damaged-*"))))
+        (should (= (length damaged) 1))
+        (should (= (file-modes (car damaged)) #o600)))
+      (yt-cache-put-videos (list (yt-video--make :id "bbbbbbbbbbb" :title "New")))
+      (should (yt-cache-get "bbbbbbbbbbb")))))
+
+(ert-deftest yt-cache-locked-or-newer-is-not-damaged ()
+  "Only SQLite's codes for a damaged file count as damage."
+  (should (yt-cache--damaged-p '(sqlite-error ("file is not a database" "x" 26 26))))
+  (should (yt-cache--damaged-p '(sqlite-error "database disk image is malformed")))
+  (should-not (yt-cache--damaged-p '(sqlite-error ("database is locked" "x" 5 5))))
+  (should-not (yt-cache--damaged-p '(user-error "The yt cache x was written by a newer yt"))))
+
+(ert-deftest yt-cache-skips-undecodable-rows ()
+  "A row whose data is not JSON is left out, not an error."
+  (yt-test-with-scenario (_ _)
+    (yt-cache-put-feed "subscriptions"
+                       (list (yt-video--make :id "aaaaaaaaaaa" :title "Good")
+                             (yt-video--make :id "bbbbbbbbbbb" :title "Bad")))
+    (sqlite-execute (yt-cache-db) "UPDATE videos SET data = '{broken' WHERE id = 'bbbbbbbbbbb'")
+    (should (equal (mapcar #'yt-video-id (yt-cache-feed "subscriptions")) '("aaaaaaaaaaa")))
+    (should-not (yt-cache-get "bbbbbbbbbbb"))))
+
 (provide 'yt-cache-tests)
 ;;; yt-cache-tests.el ends here

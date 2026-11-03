@@ -162,6 +162,9 @@ That is when the newer schema says its min_reader is ours or older."
     (condition-case err
         (progn
           (sqlite-pragma db "busy_timeout = 3000")
+          ;; Reading the schema is what fails on a file that is not a
+          ;; database (some pragmas just return nothing).
+          (sqlite-select db "SELECT count(*) FROM sqlite_master")
           (sqlite-pragma db "journal_mode = WAL")
           (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
             ;; A copy first, whenever an existing cache changes format.
@@ -176,7 +179,45 @@ That is when the newer schema says its min_reader is ours or older."
           db)
       (error (ignore-errors (sqlite-execute db "ROLLBACK"))
              (sqlite-close db)
-             (signal (car err) (cdr err))))))
+             (if (yt-cache--damaged-p err)
+                 (yt-cache--set-aside file)
+               (signal (car err) (cdr err)))))))
+
+(defun yt-cache--damaged-p (err)
+  "Return non-nil if ERR says the cache file is not a usable database.
+A locked or a newer database is not damaged: only SQLite's codes for
+a corrupt file (11) or not a database (26), or their messages, count."
+  (and (eq (car err) 'sqlite-error)
+       (let ((data (cadr err)))
+         (if (consp data)
+             (memq (nth 2 data) '(11 26))
+           (and (stringp data)
+                (string-match-p "\\`\\(?:file is not a database\\|database disk image is malformed\\)"
+                                data))))))
+
+(defun yt-cache--set-aside (file)
+  "Keep a copy of the damaged cache FILE and open a fresh one instead.
+The copy and SQLite's -wal and -shm files get a .damaged- name next to
+it; the warning names them and the newest backup."
+  (let* ((stamp (format-time-string "%Y%m%d-%H%M%S"))
+         (copy (format "%s.damaged-%s" file stamp))
+         (backup (car (yt-cache--backup-files file))))
+    (dolist (suffix '("" "-wal" "-shm"))
+      (when (file-exists-p (concat file suffix))
+        (copy-file (concat file suffix) (concat copy suffix) t)
+        (set-file-modes (concat copy suffix) #o600)))
+    (dolist (suffix '("" "-wal" "-shm"))
+      (when (file-exists-p (concat file suffix))
+        (delete-file (concat file suffix))))
+    (display-warning
+     'yt
+     (format "The yt cache was damaged and is kept as %s; yt starts a fresh one.  %s"
+             (abbreviate-file-name copy)
+             (if backup
+                 (format "To go back to the backup instead, quit Emacs and copy %s to %s."
+                         (abbreviate-file-name backup) (abbreviate-file-name file))
+               "There is no backup to go back to.")))
+    (yt-cache--open file)))
 
 (defun yt-cache-db ()
   "Return the cache database, opening it if needed."
@@ -218,11 +259,16 @@ That is when the newer schema says its min_reader is ours or older."
     (json-serialize (nreverse plist))))
 
 (defun yt-cache--decode (data fetched-at watched position)
-  "Return a `yt-video' from the JSON DATA and local state.
-FETCHED-AT, WATCHED and POSITION come from the row's own columns."
-  (let ((plist (json-parse-string data :object-type 'plist
-                                  :null-object nil :false-object nil))
-        (video (yt-video--make)))
+  "Return a `yt-video' from the JSON DATA and local state, or nil.
+FETCHED-AT, WATCHED and POSITION come from the row's own columns.
+A row whose DATA is not JSON is skipped, not an error, so that one
+damaged row does not stop a whole feed from showing."
+  (when-let* ((plist (condition-case nil
+                         (json-parse-string (or data "") :object-type 'plist
+                                            :null-object nil :false-object nil)
+                       (json-error nil)))
+              ((listp plist))
+              (video (yt-video--make)))
     (pcase-dolist (`(,field ,keyword ,offset) yt-cache--slots)
       (let ((value (plist-get plist keyword)))
         (when (and value (memq field '(live-status timestamp-approx-p))
@@ -320,16 +366,17 @@ alone, since a borrowed time would look like their start time."
   "Return the cached videos of the feed SOURCE, a string, in feed order.
 Return at most LIMIT videos, or `yt-cache-feed-max'."
   (let ((index -1))
-    (mapcar (lambda (row)
-              (let ((video (apply #'yt-cache--decode row)))
-                (setf (yt-video-feed-index video) (cl-incf index))
-                video))
-            (sqlite-select
+    (delq nil
+          (mapcar (lambda (row)
+                    (when-let* ((video (apply #'yt-cache--decode row)))
+                      (setf (yt-video-feed-index video) (cl-incf index))
+                      video))
+                  (sqlite-select
              (yt-cache-db)
              "SELECT v.data, v.fetched_at, v.watched, v.position
               FROM feed f JOIN videos v ON v.id = f.id
               WHERE f.source = ? ORDER BY f.pos LIMIT ?"
-             (list source (or limit yt-cache-feed-max))))))
+                   (list source (or limit yt-cache-feed-max)))))))
 
 (defun yt-cache-put-feed (source videos &optional replace)
   "Merge the freshly fetched VIDEOS, in feed order, into the feed SOURCE.
@@ -521,14 +568,16 @@ VIDEO is cached too, if it is not yet."
 (defun yt-cache-history (&optional limit)
   "Return the videos you played, the most recent first, at most LIMIT.
 Each element is (VIDEO . PLAYED-AT), PLAYED-AT in seconds since the epoch."
-  (mapcar (lambda (row)
-            (cons (apply #'yt-cache--decode (butlast row)) (car (last row))))
-          (sqlite-select
+  (delq nil
+        (mapcar (lambda (row)
+                  (when-let* ((video (apply #'yt-cache--decode (butlast row))))
+                    (cons video (car (last row)))))
+                (sqlite-select
            (yt-cache-db)
            "SELECT v.data, v.fetched_at, v.watched, v.position, h.played_at
             FROM history h JOIN videos v ON v.id = h.id
             ORDER BY h.played_at DESC, h.rowid DESC LIMIT ?"
-           (list (or limit yt-cache-feed-max)))))
+                 (list (or limit yt-cache-feed-max))))))
 
 (defun yt-cache-remove-history (ids)
   "Remove the videos with IDS from the played videos."

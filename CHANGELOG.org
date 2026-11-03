@@ -9,6 +9,11 @@
     Manager rollback an older yt opens a cache a newer one only added
     to, instead of refusing it.
   - =yt-doctor= shows the cache's schema version, size and backups.
+  - A cache file that is not a database any more is kept aside as
+    =yt.sqlite.damaged-…= and yt starts a fresh one, saying how to go
+    back to the newest backup; a locked or newer cache is never taken
+    for damaged.  A row that cannot be read is left out instead of
+    stopping the whole feed.
 
 * 0.3.0 (2026-11-03)
 ** Keys that changed
