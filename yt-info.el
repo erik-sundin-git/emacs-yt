@@ -272,6 +272,7 @@ See `yt-info--details'."
   "RET" #'yt-info-ret
   "TAB" #'forward-button
   "<backtab>" #'backward-button
+  "j" yt-map
   "g" #'yt-info-refresh)
 
 (define-derived-mode yt-info-mode special-mode "yt-info"

@@ -172,5 +172,50 @@ comment autoloads whatever comes next instead."
       (should (equal (lm-version (expand-file-name "yt.el" dir)) released))
       (should (equal yt-version released)))))
 
+(defconst yt-test-mx-only-commands
+  '(yt-check-auth yt-debug-fetch-feed yt-forget-history yt-logout yt-player-mode
+    yt-subscribe-browse yt-subscriptions yt-feed-subscriptions yt-url-handler-mode
+    ;; Reached through + and - in feeds.
+    yt-feed-save-playlist yt-feed-forget-playlist yt-subscribe yt-unsubscribe)
+  "yt's commands that are meant for M-x, or reached through another key.")
+
+(ert-deftest yt-test-every-command-has-a-key ()
+  "Every interactive yt command is bound in a yt keymap, or allowlisted."
+  (dolist (feature '(yt-channels yt-playlists yt-history yt-info yt-mpv yt-vlc yt-select
+                                 yt-subscribe yt-url yt-doctor))
+    (require feature))
+  (let ((maps (list yt-map yt-feed-mode-map yt-channels-mode-map yt-playlists-mode-map
+                    yt-history-mode-map yt-info-mode-map yt-playlist-mode-map
+                    yt-list-mode-map yt-video-actions-map yt-player-map yt-feed-toggle-map))
+        unbound)
+    (mapatoms
+     (lambda (symbol)
+       (when (and (string-prefix-p "yt-" (symbol-name symbol))
+                  (not (string-search "--" (symbol-name symbol)))
+                  (commandp symbol)
+                  (not (memq symbol yt-test-mx-only-commands))
+                  (let ((file (symbol-file symbol 'defun)))
+                    (and file (string-prefix-p "yt" (file-name-nondirectory file))))
+                  ;; One map at a time: in a list, one map's key hides another's.
+                  (not (seq-some (lambda (map) (where-is-internal symbol map t)) maps)))
+         (push symbol unbound))))
+    (should-not (sort unbound #'string<))))
+
+(ert-deftest yt-test-keys-are-consistent ()
+  "The same keys do the same in every yt list."
+  (dolist (feature '(yt-channels yt-playlists yt-history yt-info)) (require feature))
+  (dolist (map (list yt-feed-mode-map yt-channels-mode-map yt-playlists-mode-map
+                     yt-history-mode-map yt-playlist-mode-map yt-info-mode-map))
+    (should (eq (keymap-lookup map "j c") #'yt-channels))
+    (should (eq (keymap-lookup map "P SPC") #'yt-player-pause)))
+  (dolist (map (list yt-channels-mode-map yt-playlists-mode-map yt-history-mode-map))
+    (should (eq (keymap-lookup map "/") #'yt-list-filter))
+    (should (eq (keymap-lookup map "C") #'yt-list-clear-filter))
+    (should (eq (keymap-lookup map "s") #'yt-list-filter-with-s)))
+  (should (eq (keymap-lookup yt-feed-mode-map "s") #'yt-list-filter-with-s))
+  (should (eq (keymap-lookup yt-playlists-mode-map "o") #'yt-playlists-open))
+  (should (eq (keymap-lookup yt-playlist-mode-map "z") #'yt-player-shuffle-playlist))
+  (should (eq (keymap-lookup yt-player-repeat-map "=") #'yt-player-normal-speed)))
+
 (provide 'yt-tests)
 ;;; yt-tests.el ends here

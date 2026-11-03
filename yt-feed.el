@@ -371,6 +371,13 @@ one.  Return nil if there is no row."
                     ((and yt-feed--videos (yt-feed--hidden-message)))
                     ((eq (car-safe yt-feed--source) 'search)
                      (format "No results for “%s”." (cadr yt-feed--source)))
+                    ((and (eq yt-feed--source 'subscriptions)
+                          (not (file-exists-p (yt-auth-cookie-file))))
+                     (substitute-command-keys
+                      "\\<yt-feed-mode-map>Not signed in yet.  To sign in:
+    1. In Chromium, make a profile used only for YouTube, and sign in to YouTube there.
+    2. Press \\[yt-login] and choose that profile.
+    3. Press \\[yt-feed-refresh] to fetch your subscriptions."))
                     (t (substitute-command-keys
                         "No videos yet.  Press \\<yt-feed-mode-map>\\[yt-feed-refresh] to refresh.")))
               "\n"))))
@@ -882,8 +889,9 @@ to the channel of the video at point."
   :parent (make-composed-keymap yt-video-actions-map tabulated-list-mode-map)
   "g" #'yt-feed-refresh
   "G" #'yt-feed-refresh-all
-  "s" #'yt-feed-filter
   "/" #'yt-feed-filter
+  "s" #'yt-list-filter-with-s
+  "j" yt-map
   "c" #'yt-feed-filter-channel
   "C" #'yt-feed-clear-filters
   "t" (cons "toggle" yt-feed-toggle-map)

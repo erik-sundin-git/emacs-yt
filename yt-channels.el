@@ -124,7 +124,9 @@ They are computed from the cached subscription feed."
     (list (if refreshed
               (format "updated %s" (yt-list-ago refreshed))
             "never updated")
-          (yt-list-count (length yt-channels--channels) "channel"))))
+          (yt-list-count (length yt-channels--channels) "channel")
+          (substitute-command-keys
+           "\\<yt-channels-mode-map>\\[yt-channels-open] uploads, \\[yt-channel-playlists] playlists, \\[yt-channels-unsubscribe] unsubscribes"))))
 
 (defun yt-channels--empty ()
   "Return what an empty channels list says."

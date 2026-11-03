@@ -1,6 +1,16 @@
 #+title: yt changelog
 
 * Unreleased
+- Keys that are the same everywhere:
+  - =j= gives every key of =C-c y= in all yt buffers (=j c= channels,
+    =j h= history), and =P= the player keys, now also in the channels and
+    playlists lists.
+  - =/= filters in every list and =C= clears the filter; =s= still
+    filters but says it will stop in 0.4.
+  - =o= opens a playlist, as in the channels list; =z= shuffles mpv's
+    playlist in its buffer; === joins the keys that repeat.
+  - The channels list's header line names its keys.  An empty feed
+    without a sign-in lists the three steps to sign in.
 - The channels, playlists and history lists filter like the feed: words
   must all match, =@word= matches the channel, =!word= excludes.  A
   filter that matches nothing says so.  Their header lines put the

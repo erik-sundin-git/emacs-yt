@@ -190,6 +190,7 @@ once its videos arrive."
   :doc "Keymap for `yt-playlists-mode'."
   :parent yt-list-mode-map
   "RET" #'yt-playlists-open
+  "o" #'yt-playlists-open
   "z" #'yt-playlists-shuffle
   "+" #'yt-playlists-save
   "-" #'yt-playlists-forget

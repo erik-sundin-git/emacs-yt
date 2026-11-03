@@ -674,7 +674,8 @@ out.  Playing another video ends the sequence."
   "n" #'yt-player-next
   "p" #'yt-player-previous
   "." #'yt-player-next-chapter
-  "," #'yt-player-previous-chapter)
+  "," #'yt-player-previous-chapter
+  "=" #'yt-player-normal-speed)
 
 (defun yt-player--repeat ()
   "Let the keys of `yt-player-repeat-map' repeat the last command.
@@ -778,7 +779,8 @@ It is not skipped again.  See `yt-sponsorblock-categories'."
 (dolist (command '(yt-player-pause yt-player-seek-forward yt-player-seek-backward
                    yt-player-seek-forward-more yt-player-seek-backward-more
                    yt-player-faster yt-player-slower yt-player-next yt-player-previous
-                   yt-player-next-chapter yt-player-previous-chapter))
+                   yt-player-next-chapter yt-player-previous-chapter
+                   yt-player-normal-speed))
   (put command 'repeat-map 'yt-player-repeat-map))
 
 ;;;; Mode line
@@ -985,6 +987,8 @@ Without a region, move to the next row."
   :parent (make-composed-keymap yt-video-actions-map tabulated-list-mode-map)
   "RET" #'yt-playlist-play
   "d" #'yt-playlist-remove
+  "z" #'yt-player-shuffle-playlist
+  "j" yt-map
   "g" #'yt-playlist-refresh)
 
 (define-derived-mode yt-playlist-mode tabulated-list-mode "yt-playlist"

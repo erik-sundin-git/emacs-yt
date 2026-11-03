@@ -299,12 +299,28 @@ channel, and !word excludes."
   (setq yt-list--query (and (not (string-blank-p query)) query))
   (yt-list-reprint))
 
+(defun yt-list-clear-filter ()
+  "Show every row again."
+  (interactive nil yt-list-mode)
+  (yt-list-filter ""))
+
+(defun yt-list-filter-with-s ()
+  "Filter, as \\`/' does.  \\`s' will stop filtering in yt 0.4."
+  (interactive)
+  (message "s will stop filtering in yt 0.4; use /")
+  (call-interactively (keymap-lookup nil "/")))
+
 (defvar-keymap yt-list-mode-map
-  :doc "Keymap shared by the yt lists derived from `yt-list-mode'."
+  :doc "Keymap shared by the yt lists derived from `yt-list-mode'.
+\\`j' is `yt-map' and \\`P' the player keys, as in every yt buffer."
   :parent tabulated-list-mode-map
   "/" #'yt-list-filter
-  "s" #'yt-list-filter
-  "g" #'revert-buffer)
+  "s" #'yt-list-filter-with-s
+  "C" #'yt-list-clear-filter
+  "g" #'revert-buffer
+  "j" yt-map
+  "P" yt-player-map
+  "L" #'yt-login)
 
 (define-derived-mode yt-list-mode tabulated-list-mode "yt-list"
   "Base mode of yt's lists of channels, playlists and played videos."

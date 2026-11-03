@@ -123,7 +123,7 @@ the info and playlist buffers):
 | =b= / =y= / =Y= | open in a browser / copy the URL / copy "Title — URL"  |
 | =P=           | the player keys above                                    |
 | =g= / =G=     | refresh / cancel and refetch everything                  |
-| =s= or =/=    | filter: words, =@channel=, =!exclude=                    |
+| =/=           | filter: words, =@channel=, =!exclude= (=s= too, until 0.4) |
 | =c= / =C=     | show one channel / clear the filters                     |
 | =t w=, =t s=, =t u= | hide watched videos, Shorts, upcoming streams      |
 | =t n=         | show only the videos new since your last visit (◆)      |
@@ -134,13 +134,20 @@ the info and playlist buffers):
 | =z=           | play the videos shown in random order, in mpv            |
 | =A=           | play the unwatched videos shown from point down, in order |
 | =L=           | sign in                                                  |
+| =j=           | every key of =C-c y=: =j c= channels, =j h= history, …   |
 | =S=           | sort by the column at point (tabulated-list)             |
 
-In the channels list, =o= shows a channel's uploads, =O= its playlists, and
-=-= or =d= unsubscribes from it.
-A channel's playlists, and the saved ones (=C-c y P=), open with =RET= in
-playlist order; =+= saves the playlist at point, =-= or =d= forgets it, =z=
-shuffles it, and =b= opens it in a browser.
+Every yt list has =j= for the keys of =C-c y=, =P= for the player keys,
+=/= to filter (=C= clears it), =g= to refresh and =L= to sign in.
+
+In the channels list, =RET= or =o= shows a channel's uploads, =O= its
+playlists, and =-= or =d= unsubscribes from it.
+A channel's playlists, and the saved ones (=C-c y P=), open with =RET= or
+=o= in playlist order; =+= saves the playlist at point, =-= or =d= forgets
+it, =z= shuffles it, and =b= opens it in a browser.  In the history, =d=
+removes the video at point (or the region) and =D= clears the list.  In
+mpv's playlist (=C-c y l=), =RET= plays an entry, =d= removes it and =z=
+shuffles it.
 
 In the subscription feed, ● marks a video you have not watched and ◆ one
 that arrived since your last visit (when you last opened the feed, at
