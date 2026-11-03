@@ -1,0 +1,10 @@
+#!/bin/sh
+# Stands in for every program a test did not ask for (curl, mpv, VLC,
+# Chromium): it records the call in $YT_TEST_ROOT/tripwire.log, which
+# the test scenario checks when it ends, and fails.
+#
+# Copyright (C) 2026 Erik Sundin
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+echo "$0 $*" >> "${YT_TEST_ROOT:?YT_TEST_ROOT is not set}/tripwire.log"
+exit 99

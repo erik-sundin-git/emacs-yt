@@ -236,7 +236,8 @@ directory of the fake yt-dlp and to the fake VLC's directory."
         called)
     (yt-player--when-available (list :available-at (+ start 0.4))
                                (lambda () (setq called (float-time))))
-    (yt-test-sleep 0.2)
+    ;; Not at once; and whenever it runs, not before the release time
+    ;; (a sleep here would fail on a busy machine).
     (should-not called)
     (yt-test-wait-until (lambda () called) "release")
     (should (>= (- called start) 0.4))

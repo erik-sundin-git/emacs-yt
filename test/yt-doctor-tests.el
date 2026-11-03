@@ -29,7 +29,9 @@
     (yt-cache-put-videos (list (yt-video--make :id "aaaaaaaaaaa")))
     (yt-mark-watched "aaaaaaaaaaa")
     (save-window-excursion
-      (yt-doctor)
+      ;; The doctor asks mpv for its version: not the real one.
+      (let ((yt-mpv-program "yt-test-no-such-mpv"))
+        (yt-doctor))
       (with-current-buffer "*yt-doctor*"
         (let ((text (buffer-string))
               (case-fold-search nil))
@@ -44,6 +46,7 @@
           (should (string-match-p "  videos +1, 1 watched, 0 in the subscription feed" text))
           (should (string-match-p "^Thumbnails +.*(none cached, off" text))
           (should (string-match-p "^Programs\n" text))
+          (should (string-match-p "^mpv +yt-test-no-such-mpv: not found" text))
           (should-not (string-match-p "FAKE-\\|LOGIN_INFO\\|SAPISID" text))))
       (kill-buffer "*yt-doctor*"))))
 

@@ -20,6 +20,13 @@
 (require 'yt-cache)
 (require 'yt-feed)
 (require 'yt-sponsorblock)
+(require 'yt-thumbs)
+(require 'yt-player)
+(require 'yt-mpv)
+(require 'yt-vlc)
+(require 'yt-info)
+(require 'yt-history)
+(require 'yt-select)
 
 (defconst yt-test-dir
   (file-name-directory (or load-file-name buffer-file-name))
@@ -226,12 +233,56 @@ file it writes."
   "Return the per-run cookie copies left in the runtime directory."
   (directory-files (yt-ensure-runtime-directory) t "\\`cookies-.*\\.txt\\'"))
 
+(defconst yt-test-tripwire (expand-file-name "tripwire" yt-test-bin-dir)
+  "A program that fails the test that runs it; see test/bin/tripwire.")
+
+(defun yt-test--tripwire-calls ()
+  "Return the calls of `yt-test-tripwire' so far, and forget them."
+  (let ((log (expand-file-name "tripwire.log" yt-test-root)))
+    (when (file-exists-p log)
+      (prog1 (split-string (yt-test-file-string log) "\n" t)
+        (delete-file log)))))
+
+(defun yt-test--end-scenario ()
+  "Clean up after a scenario, and fail if the test left something behind.
+It fails if a program the test did not ask for ran, or if a yt or
+fake process is still alive; yt's timers are cancelled."
+  (dolist (buffer (yt-feed--buffers))
+    (kill-buffer buffer))
+  (let (keys)
+    (maphash (lambda (key _) (push key keys)) yt-process--running)
+    (mapc #'yt-process-cancel keys))
+  (dolist (timer (append timer-list timer-idle-list))
+    (let ((fn (timer--function timer)))
+      (when (and (symbolp fn) (string-prefix-p "yt-" (symbol-name fn)))
+        (cancel-timer timer))))
+  (yt-cache-close)
+  (let* ((live (lambda ()
+                 (seq-filter (lambda (process)
+                               (and (process-live-p process)
+                                    (string-match-p "\\`\\(?:yt-\\|fake-\\)"
+                                                    (process-name process))))
+                             (process-list))))
+         ;; Cancelled runs need a moment to finish and close their pipes.
+         (deadline (+ (float-time) 2)))
+    (while (and (funcall live) (< (float-time) deadline))
+      (accept-process-output nil 0.02))
+    (let ((processes (funcall live))
+          (tripwire (yt-test--tripwire-calls)))
+    (mapc #'delete-process processes)
+    (when tripwire
+      (error "The test ran programs it did not ask for: %S" tripwire))
+    (when processes
+      (error "The test left processes running: %S" (mapcar #'process-name processes))))))
+
 (defmacro yt-test-with-scenario (dirs &rest body)
   "Run BODY with yt pointed at fake programs and fresh directories.
 DIRS is (YTDLP-DIR EXPORT-DIR): variables bound to the scenario
 directories of the fake yt-dlp and the fake cookie exporter.  The
-yt state, runtime and Chromium directories are fresh, and the
-sign-in state, the cache and the feed buffers are reset."
+yt state, runtime and Chromium directories are fresh, the global
+state of every module and yt's global hooks are reset, and every
+other program yt runs is `yt-test-tripwire' unless BODY binds it.
+See `yt-test--end-scenario' for what is checked at the end."
   (declare (indent 1))
   (let ((root (make-symbol "root")))
     `(let* ((,root (make-temp-file (expand-file-name "scenario-" yt-test-root) t))
@@ -257,6 +308,31 @@ sign-in state, the cache and the feed buffers are reset."
             (yt-feed--fully-refreshed nil)
             (yt-watched-changed-functions nil)
             (yt-auth-state-change-hook nil)
+            (yt-curl-program yt-test-tripwire)
+            (yt-mpv-program yt-test-tripwire)
+            (yt-vlc-program yt-test-tripwire)
+            (yt-chromium-program yt-test-tripwire)
+            (yt-player--queue nil)
+            (yt-player--queue-busy nil)
+            (yt-player--shuffle nil)
+            (yt-player--wait-timer nil)
+            (yt-player--current-backend nil)
+            (yt-player--youtube-history-sent (make-hash-table :test #'equal))
+            (yt-select--videos (make-hash-table :test #'equal))
+            (yt-vlc--process nil)
+            (yt-info--queue (yt-process-queue-create 2))
+            (yt-thumbs--queue (yt-process-queue-create 4))
+            (yt-thumbs--pending (make-hash-table :test #'equal))
+            (yt-thumbs--failed (make-hash-table :test #'equal))
+            (yt-thumbs--curl-missing nil)
+            (yt-history--refresh-timer nil)
+            (yt-history-changed-hook nil)
+            (yt-subscriptions-changed-functions nil)
+            (yt-thumbs-changed-functions nil)
+            (yt-player-file-started-functions nil)
+            (yt-player-resolve-failed-functions nil)
+            (yt-player-playlist-changed-hook nil)
+            (kill-emacs-hook kill-emacs-hook)
             (yt-player--streams (make-hash-table :test #'equal))
             (yt-sponsorblock--segments (make-hash-table :test #'equal))
             (yt-sponsorblock--waiting (make-hash-table :test #'equal))
@@ -269,14 +345,9 @@ sign-in state, the cache and the feed buffers are reset."
        (make-directory yt-chromium-directory t)
        (unwind-protect
            (progn ,@body)
-         (dolist (buffer (yt-feed--buffers))
-           (kill-buffer buffer))
-         (let (keys)
-           (maphash (lambda (key _) (push key keys)) yt-process--running)
-           (mapc #'yt-process-cancel keys))
-         (cancel-function-timers #'yt-feed--update-ages)
-         (yt-cache-close)
-         (delete-directory ,root t)))))
+         (unwind-protect
+             (yt-test--end-scenario)
+           (delete-directory ,root t))))))
 
 (provide 'yt-test-helpers)
 ;;; yt-test-helpers.el ends here

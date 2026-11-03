@@ -8,7 +8,9 @@
 # 02, ...) it copies FILE, if any, to config-NN and the cookie file the
 # config names to cookies-NN, then prints NN.response followed by a
 # newline and the HTTP status in NN.status (default 200), as
-# --write-out does.
+# --write-out does.  If NN.hang exists, it sleeps until killed instead;
+# if NN.exit exists, it prints NN.err to standard error and exits with
+# that status, as curl does when a request fails.
 #
 # With --output, it downloads a thumbnail: if $FAKE_CURL_DIR/hang exists,
 # writes half a file to the --output file and sleeps until killed; if
@@ -29,13 +31,21 @@ for arg in "$@"; do
 done
 
 if [ -z "$output" ]; then
+    # The lock keeps concurrent calls from sharing a number.
+    while ! mkdir "$dir/lock" 2>/dev/null; do sleep 0.01; done
     n=$(( $(cat "$dir/api-count" 2>/dev/null || echo 0) + 1 ))
     echo "$n" > "$dir/api-count"
+    rmdir "$dir/lock"
     nn=$(printf '%02d' "$n")
     if [ -n "$config" ]; then
         cp "$config" "$dir/config-$nn"
         cookies=$(sed -n 's/^cookie = "\(.*\)"$/\1/p' "$config")
         [ -f "$cookies" ] && cp "$cookies" "$dir/cookies-$nn"
+    fi
+    [ -f "$dir/$nn.hang" ] && exec sleep 1000
+    if [ -f "$dir/$nn.exit" ]; then
+        [ -f "$dir/$nn.err" ] && cat "$dir/$nn.err" >&2
+        exit "$(cat "$dir/$nn.exit")"
     fi
     [ -f "$dir/$nn.response" ] && cat "$dir/$nn.response"
     printf '\n%s' "$(cat "$dir/$nn.status" 2>/dev/null || echo 200)"

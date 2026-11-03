@@ -2,7 +2,7 @@
 # Run a command with HOME and the XDG directories inside a fresh temporary
 # directory, so builds and tests can never read or write real user state.
 # The directory is removed afterwards.  The command sees its location in
-# $YT_TEST_ROOT.
+# $YT_TEST_ROOT.  The session bus, the display and BROWSER are unset.
 #
 # Copyright (C) 2026 Erik Sundin
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -21,8 +21,11 @@ for d in home state cache config runtime; do
     mkdir -m 0700 "$root/$d"
 done
 
+# No session bus, display or browser: a test must never reach the
+# desktop (notifications, a browser window, a player on screen).
 status=0
-env HOME="$root/home" \
+env -u DBUS_SESSION_BUS_ADDRESS -u DISPLAY -u WAYLAND_DISPLAY -u BROWSER \
+    HOME="$root/home" \
     XDG_STATE_HOME="$root/state" \
     XDG_CACHE_HOME="$root/cache" \
     XDG_CONFIG_HOME="$root/config" \

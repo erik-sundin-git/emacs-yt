@@ -8,7 +8,9 @@
 #     if both exist;
 #   - prints DIR/NN.err to standard error and DIR/NN.out (the JSON summary)
 #     to standard output;
-#   - exits with the status in DIR/NN.exit, default 0.
+#   - exits with the status in DIR/NN.exit, default 0;
+#   - or, if DIR/NN.mode is "hang", sleeps until killed first, as an
+#     exporter waiting for a locked keyring does.
 #
 # Copyright (C) 2026 Erik Sundin
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -30,6 +32,9 @@ for arg in "$@"; do
     prev=$arg
 done
 
+if [ "$(cat "$dir/$nn.mode" 2>/dev/null)" = hang ]; then
+    exec sleep 1000
+fi
 if [ -n "$output" ] && [ -f "$dir/$nn.cookies" ]; then
     (umask 077 && cat "$dir/$nn.cookies" > "$output")
 fi

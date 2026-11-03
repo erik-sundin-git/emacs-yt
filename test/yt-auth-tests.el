@@ -378,9 +378,9 @@ CALLBACK, if non-nil, is also passed to `yt-auth-export'."
                 ((symbol-function 'message)
                  (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
         (yt-login)
-        (yt-test-wait-until (lambda () (eq (yt-auth-state) 'ok)))
-        (yt-test-sleep 0.1))
-      (should (string-match-p "Signed in to YouTube" (car messages))))
+        (yt-test-wait-until (lambda () (and messages
+                                            (string-match-p "Signed in to YouTube" (car messages))))
+                            "signed-in message")))
     (should (equal (yt-state-get 'cookie-profile) "Profile 1"))
     (should (member ":ytsubs" (yt-test-argv ytdlp 1)))))
 
