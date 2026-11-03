@@ -1,0 +1,24 @@
+# Runs every flake check: compile, per-file load check, checkdoc,
+# package-lint, the tests (interpreted and compiled) and the package build.
+# The checks are hermetic: they use fake programs and no network.
+name: check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  flake-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      # cachix/install-nix-action v31.11.3
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b
+      - run: nix flake check -L --keep-going

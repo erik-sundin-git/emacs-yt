@@ -23,13 +23,24 @@ SELECTOR ?= t
 BATCH     = sh scripts/isolated $(EMACS) -Q --batch -L . -L test \
             --eval '(setq load-prefer-newer t)'
 
-.PHONY: all compile native checkdoc lint test clean
+.PHONY: all compile load-check native checkdoc lint test clean
 
-all: compile checkdoc lint test
+all: compile load-check checkdoc lint test
 
 compile:
 	$(BATCH) --eval '(setq byte-compile-error-on-warn t)' \
 	  -f batch-byte-compile $(SRCS)
+
+# Each file compiled and loaded in an Emacs of its own, so that a missing
+# `require' is not hidden by files loaded before it.
+load-check:
+	@for f in $(SRCS); do \
+	  echo "load-check $$f"; \
+	  $(BATCH) --eval '(setq byte-compile-error-on-warn t)' \
+	    --eval "(setq byte-compile-dest-file-function (lambda (_) (expand-file-name \"check.elc\" (getenv \"YT_TEST_ROOT\"))))" \
+	    --eval "(unless (byte-compile-file \"$$f\") (kill-emacs 1))" || exit 1; \
+	  $(BATCH) -l "$$f" || exit 1; \
+	done
 
 native:
 	$(BATCH) --eval '(startup-redirect-eln-cache (expand-file-name ".eln-cache"))' \

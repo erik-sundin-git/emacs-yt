@@ -217,6 +217,7 @@
         in
         {
           compile = makeCheck "compile";
+          load-check = makeCheck "load-check";
           checkdoc = makeCheck "checkdoc";
           lint = makeCheck "lint";
           test = makeCheck "test";

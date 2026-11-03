@@ -462,6 +462,14 @@ With a reason each; any can come back on request.
 6. Scope: all of M8-M15 (about 20 working days), or M8-M10 first and
    decide again?
 
+### Taken on 2026-11-03
+
+- Scope: M8-M10 now, then review the plan again before M11-M15.
+- The mpv playlist becomes the queue (12.4).
+- `/` is the only filter key; `s` stays one release as an alias (12.3).
+- The browse-url handler (9.7) is enabled in the user's config.
+- No release tags for now; the dotfiles keep following main (8.12).
+
 ## What the review changed
 
 - **Facts:** all phase 1 bug claims checked against the code; two
