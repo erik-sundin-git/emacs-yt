@@ -5,7 +5,7 @@
 ;; Author: Erik Sundin <mail@eriksundin.com>
 ;; Maintainer: Erik Sundin <mail@eriksundin.com>
 ;; URL: https://github.com/erik-sundin-git/emacs-yt
-;; Version: 0.1.0
+;; Version: 0.2.0
 ;; Package-Requires: ((emacs "30.1"))
 ;; Keywords: multimedia
 ;; SPDX-License-Identifier: GPL-3.0-or-later
@@ -43,6 +43,9 @@
 ;;; Code:
 
 (require 'xdg)
+
+(defconst yt-version (package-get-version)
+  "The version of yt.")
 
 (defgroup yt nil
   "Browse and play your YouTube subscriptions."
@@ -181,7 +184,7 @@ yt opens a channel in the Chromium profile it signs in with when it
 cannot subscribe to the channel itself."
   :type 'string
   :group 'yt-backend
-  :package-version '(yt . "0.1.0"))
+  :package-version '(yt . "0.2.0"))
 
 (defcustom yt-cookie-profile nil
   "Chromium profile directory that yt reads YouTube cookies from.

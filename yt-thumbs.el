@@ -39,7 +39,7 @@ The images YouTube serves are 180 pixels high; larger thumbnails
 are scaled up.  A change shows in feed buffers after \\`t i' twice."
   :type 'natnum
   :group 'yt-feed
-  :package-version '(yt . "0.1.0"))
+  :package-version '(yt . "0.2.0"))
 
 (defvar yt-thumbs-changed-functions nil
   "Abnormal hook run with a video id when its thumbnail was downloaded.")

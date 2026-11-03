@@ -101,6 +101,7 @@ number of cookies and their domains."
       (let ((inhibit-read-only t))
         (erase-buffer)
         (yt-doctor--heading "Programs")
+        (yt-doctor--insert "yt" yt-version)
         (yt-doctor--insert "Emacs" emacs-version)
         (yt-doctor--program "yt-dlp" yt-ytdlp-program)
         (when-let* ((version (plist-get ytdlp :version)))

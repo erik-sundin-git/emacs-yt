@@ -21,6 +21,13 @@
         ) ./.) ./test;
       };
 
+      # The version, from the Version header of yt.el.
+      version = lib.removePrefix ";; Version: " (
+        lib.findFirst (lib.hasPrefix ";; Version: ") (throw "yt.el has no Version header") (
+          lib.splitString "\n" (builtins.readFile ./yt.el)
+        )
+      );
+
       # yt as an Emacs package, for the emacsPackages set EPKGS.  The
       # cookie exporter is found by its store path, not on PATH, which an
       # Emacs daemon started by systemd may not have.
@@ -28,7 +35,7 @@
         pkgs: epkgs:
         epkgs.trivialBuild {
           pname = "yt";
-          version = "0.1.0";
+          inherit version;
           src = ytSrc;
           turnCompilationWarningToError = true;
           postPatch = ''
@@ -40,12 +47,12 @@
           # activates yt at startup and M-x yt works without a require.
           installPhase = ''
             runHook preInstall
-            dir=$out/share/emacs/site-lisp/elpa/yt-0.1.0
+            dir=$out/share/emacs/site-lisp/elpa/yt-${version}
             install -d $dir
             install *.el *.elc $dir
             cat > $dir/yt-pkg.el <<'PKG'
             ;;; yt-pkg.el --- Package description for yt -*- no-byte-compile: t -*-
-            (define-package "yt" "0.1.0" "Browse and play your YouTube subscriptions" '((emacs "30.1")))
+            (define-package "yt" "${version}" "Browse and play your YouTube subscriptions" '((emacs "30.1")))
             PKG
             emacs --batch --eval "(loaddefs-generate \"$dir\" \"$dir/yt-autoloads.el\")"
             runHook postInstall

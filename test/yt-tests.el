@@ -162,5 +162,15 @@ comment autoloads whatever comes next instead."
       (when (file-exists-p out)
         (delete-file out)))))
 
+(ert-deftest yt-test-version-matches-changelog ()
+  "The Version header of yt.el is the newest release in the CHANGELOG."
+  (require 'lisp-mnt)
+  (let* ((dir (file-name-directory (directory-file-name yt-test-dir)))
+         (changelog (yt-test-file-string (expand-file-name "CHANGELOG.org" dir))))
+    (should (string-match "^\\* \\([0-9][0-9.]*\\) (" changelog))
+    (let ((released (match-string 1 changelog)))
+      (should (equal (lm-version (expand-file-name "yt.el" dir)) released))
+      (should (equal yt-version released)))))
+
 (provide 'yt-tests)
 ;;; yt-tests.el ends here

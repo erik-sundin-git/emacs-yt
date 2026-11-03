@@ -65,13 +65,13 @@ nil turns SponsorBlock off: yt then never contacts it."
               (const :tag "Filler tangent" filler)
               (const :tag "Non-music section of music videos" music_offtopic))
   :group 'yt-player
-  :package-version '(yt . "0.1.0"))
+  :package-version '(yt . "0.2.0"))
 
 (defcustom yt-sponsorblock-api "https://sponsor.ajay.app"
   "The SponsorBlock server."
   :type 'string
   :group 'yt-player
-  :package-version '(yt . "0.1.0"))
+  :package-version '(yt . "0.2.0"))
 
 (defvar yt-sponsorblock-duration-tolerance 5
   "Seconds a segment's video may differ in length from the video played.

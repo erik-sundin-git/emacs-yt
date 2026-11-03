@@ -107,7 +107,7 @@ uses it for recommendations.  yt's own history, \[yt-history],
 does not depend on this."
   :type 'boolean
   :group 'yt-player
-  :package-version '(yt . "0.1.0"))
+  :package-version '(yt . "0.2.0"))
 
 (defvar yt-player--youtube-history-sent (make-hash-table :test #'equal)
   "Ids of the videos added to the YouTube history in this session.")
