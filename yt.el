@@ -442,6 +442,7 @@ Each binding has a short label, which which-key shows."
   "z" '("shuffle queue" . yt-player-shuffle-queue)
   "U" '("undo skip" . yt-player-unskip)
   "K" '("skipping on/off" . yt-player-toggle-skipping)
+  "M" '("audio only/video" . yt-player-toggle-audio)
   "S" '("stop" . yt-player-stop)
   "Q" '("quit player" . yt-player-quit)
   "!" '("player log" . yt-player-show-log))

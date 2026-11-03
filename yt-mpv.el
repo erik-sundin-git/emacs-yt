@@ -60,7 +60,8 @@
   "Number of mpv warnings kept for `yt-player-show-log'.")
 
 (defconst yt-mpv--observed
-  '("pause" "time-pos" "duration" "media-title" "playlist-pos" "speed" "idle-active")
+  '("pause" "time-pos" "duration" "media-title" "playlist-pos" "playlist-count"
+    "chapter" "speed" "idle-active")
   "The mpv properties yt observes.")
 
 (cl-defstruct (yt-mpv--entry (:constructor yt-mpv--entry-create)
@@ -69,10 +70,13 @@
 VIDEO is the `yt-video' and STREAMS its resolved streams.  DURATION,
 POS and MAX-POS are in seconds.  FINALIZED is non-nil once the entry
 was marked watched or its position saved; RETRIED once it was
-resolved again after a playback error.  SKIPPED lists the
-SponsorBlock segments skipped, which are not skipped again, and
-LAST-SKIP is the latest of them."
-  video streams duration pos (max-pos 0) finalized retried skipped last-skip)
+resolved again after a playback error.  CONTINUED is non-nil for an
+entry that took the place of one playing the same video, which does
+not count as starting it again.  SKIPPED lists the SponsorBlock
+segments skipped, which are not skipped again, and LAST-SKIP is the
+latest of them."
+  video streams duration pos (max-pos 0) finalized retried continued
+  skipped last-skip)
 
 (defvar yt-mpv--instance 0
   "Number of the current mpv instance, incremented at each spawn.")
@@ -360,7 +364,9 @@ with nil and an error message.  Return the request id."
 
 (defun yt-mpv--state ()
   "Return the player state for `yt-player-update-mode-line'."
-  (let ((entry (and yt-mpv--current (gethash yt-mpv--current yt-mpv--entries))))
+  (let* ((entry (and yt-mpv--current (gethash yt-mpv--current yt-mpv--entries)))
+         (streams (and entry (yt-mpv--entry-streams entry)))
+         (chapter (plist-get yt-mpv--properties :chapter)))
     (list :title (or (and entry (yt-mpv--entry-video entry)
                           (yt-video-title (yt-mpv--entry-video entry)))
                      (plist-get yt-mpv--properties :media-title))
@@ -368,7 +374,15 @@ with nil and an error message.  Return the request id."
           :duration (plist-get yt-mpv--properties :duration)
           :pause (plist-get yt-mpv--properties :pause)
           :speed (plist-get yt-mpv--properties :speed)
-          :idle (plist-get yt-mpv--properties :idle-active))))
+          :idle (plist-get yt-mpv--properties :idle-active)
+          ;; -1 before the first chapter.
+          :chapter (and (natnump chapter)
+                        (plist-get (nth chapter (plist-get streams :chapters)) :title))
+          :playlist-pos (plist-get yt-mpv--properties :playlist-pos)
+          :playlist-count (plist-get yt-mpv--properties :playlist-count)
+          :audio-only (plist-get streams :audio-only)
+          :live (plist-get streams :live)
+          :skipping-off (not yt-mpv--skipping))))
 
 (defun yt-mpv--entry (id)
   "Return the entry of playlist entry ID, creating it if needed."
@@ -439,7 +453,8 @@ mpv runs with --ytdl=no, so the chapters come from yt-dlp's JSON."
   "Note that the video of ENTRY started.
 Mark it watched if videos count when they start; see
 `yt-player-started'."
-  (when-let* ((video (yt-mpv--entry-video entry)))
+  (when-let* ((video (yt-mpv--entry-video entry))
+              ((not (yt-mpv--entry-continued entry))))
     (when (and (eq yt-mark-watched-when 'start) (yt-video-id video))
       (yt-mark-watched video))
     (yt-player-started video)))
@@ -511,6 +526,7 @@ URLs expire after some hours, which breaks queued entries."
           (when (yt-mpv--current-p instance)
             (yt-mpv--reload-in-place id video streams (and pos (floor pos)) t)))))
      #'yt-player-report-failure
+     :audio-only (plist-get (yt-mpv--entry-streams entry) :audio-only)
      :key '(yt-mpv . retry))))
 
 (defun yt-mpv--end-file (id reason file-error)
@@ -609,15 +625,17 @@ defaulting to the streams' title, is shown by mpv.  mpv needs every
 option value as a string."
   (list :name "loadfile" :url (plist-get streams :video) :flags flags :index index
         :options (list :audio-file (plist-get streams :audio)
+                       :vid (and (plist-get streams :audio-only) "no")
                        :force-media-title (or title (plist-get streams :title))
                        :user-agent (cdr (assoc-string "User-Agent"
                                                       (plist-get streams :headers) t))
                        :start (and start (> start 0) (format "%d" start)))))
 
-(defun yt-mpv--load (video streams flags &optional start retried index)
+(defun yt-mpv--load (video streams flags &optional start retried index continued)
   "Load VIDEO with its STREAMS into mpv with FLAGS, from START.
 RETRIED non-nil means this is a second try after an error.  INDEX is
-the playlist index for the flags \"insert-at\"."
+the playlist index for the flags \"insert-at\".  CONTINUED is as in
+`yt-mpv--entry'."
   (yt-mpv--ensure)
   (unless yt-player-mode
     (yt-player-mode 1))
@@ -635,7 +653,8 @@ the playlist index for the flags \"insert-at\"."
              (let ((entry (yt-mpv--entry id)))
                (setf (yt-mpv--entry-video entry) video
                      (yt-mpv--entry-streams entry) streams
-                     (yt-mpv--entry-retried entry) retried)
+                     (yt-mpv--entry-retried entry) retried
+                     (yt-mpv--entry-continued entry) continued)
                ;; The file may have started, or even loaded, before
                ;; this reply arrived.
                (when (eql id yt-mpv--current)
@@ -648,7 +667,9 @@ the playlist index for the flags \"insert-at\"."
 (defun yt-mpv--reload-in-place (id video streams &optional start retried)
   "Put VIDEO with STREAMS in place of playlist entry ID and play it.
 Start at START seconds.  The rest of the playlist stays as it is:
-`replace' would empty it.  RETRIED is as for `yt-mpv--load'."
+`replace' would empty it.  The new entry plays before the old one is
+removed, so that mpv does not move on to the next one meanwhile.
+RETRIED is as for `yt-mpv--load'."
   (let ((instance yt-mpv--instance))
     (yt-mpv-send
      '("get_property" "playlist")
@@ -658,10 +679,33 @@ Start at START seconds.  The rest of the playlist stays as it is:
                            (cl-position id data :key (lambda (item) (plist-get item :id))))))
            (if (not index)
                ;; The entry is gone: play the video next instead.
-               (yt-mpv--load video streams "insert-next-play" start retried)
-             (yt-mpv-send (list "playlist-remove" index))
-             (yt-mpv--load video streams "insert-at" start retried index)
-             (yt-mpv-send (list "playlist-play-index" index) #'yt-mpv--report))))))))
+               (yt-mpv--load video streams "insert-next-play" start retried nil t)
+             (yt-mpv--load video streams "insert-at" start retried index t)
+             (yt-mpv-send (list "playlist-play-index" index) #'yt-mpv--report)
+             (yt-mpv-send (list "playlist-remove" (1+ index))))))))))
+
+(defun yt-mpv--toggle-audio ()
+  "Play the current video as audio only, or with its picture again.
+It goes on from where it is, in its place in the playlist."
+  (let* ((id yt-mpv--current)
+         (entry (and id (gethash id yt-mpv--entries)))
+         (video (and entry (yt-mpv--entry-video entry))))
+    (unless video
+      (user-error "Nothing is playing"))
+    (let ((audio-only (not (plist-get (yt-mpv--entry-streams entry) :audio-only)))
+          (pos (and (not (yt-mpv--entry-live-p entry)) (yt-mpv--entry-pos entry)))
+          (instance yt-mpv--instance))
+      (message "%s “%s”..." (if audio-only "Audio only:" "With the picture:")
+               (yt-player-title video))
+      (yt-player-resolve
+       video
+       (lambda (streams _info)
+         ;; Unless another video started meanwhile.
+         (when (and (yt-mpv--current-p instance) (eql id yt-mpv--current))
+           (yt-mpv--reload-in-place id video streams (and pos (floor pos))
+                                    (yt-mpv--entry-retried entry))))
+       #'yt-player-report-failure
+       :audio-only audio-only :key '(yt-mpv . toggle-audio) :cache t))))
 
 (cl-defmethod yt-player-backend-check ((_backend (eql 'mpv)))
   "Signal a `user-error' if mpv is not installed."
@@ -712,8 +756,10 @@ Start at START seconds.  The rest of the playlist stays as it is:
     ('remove (yt-mpv-send (list "playlist-remove" (car args)) #'yt-mpv--report))
     ('chapter (yt-mpv-send (list "add" "chapter" (car args)) #'yt-mpv--report))
     ('unskip (yt-mpv--unskip))
+    ('toggle-audio (yt-mpv--toggle-audio))
     ('toggle-skipping
      (setq yt-mpv--skipping (not yt-mpv--skipping))
+     (yt-player-update-mode-line (yt-mpv--state))
      (message "Skipping SponsorBlock segments: %s" (if yt-mpv--skipping "on" "off")))
     (_ (cl-call-next-method))))
 

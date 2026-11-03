@@ -282,18 +282,30 @@ Each value is (EXPIRES . STREAMS).")
   "Return a short name for VIDEO, for messages."
   (or (yt-video-title video) (yt-video-id video)))
 
+(defvar yt-player-audio-format "ba/b"
+  "The yt-dlp format of videos played as audio only.
+A video without an audio-only format plays its combined format, with
+its picture turned off.")
+
 (cl-defun yt-player-resolve (video callback on-error
-                                   &key format (key '(yt-player . resolve)) cache)
+                                   &key format audio-only (key '(yt-player . resolve)) cache)
   "Resolve the streams of VIDEO and call CALLBACK with them.
 CALLBACK gets the streams plist of `yt-ytdlp-parse-streams' and the
 yt-dlp JSON, or nil for kept streams.  ON-ERROR gets the error plist
 of `yt-auth-run'.  FORMAT defaults to `yt-player-format'; if it is not
-available, the streams are resolved once more with format \"b\".  A
-new call with the same KEY cancels a running one, whose ON-ERROR then
-gets :type `cancelled'.  With CACHE non-nil, streams resolved before
-and not about to expire are used, and new ones are kept."
-  (let* ((format (or format yt-player-format))
+available, the streams are resolved once more with format \"b\".
+AUDIO-ONLY non-nil means FORMAT defaults to `yt-player-audio-format'
+instead, and the streams get :audio-only t.  A new call with the same
+KEY cancels a running one, whose ON-ERROR then gets :type `cancelled'.
+With CACHE non-nil, streams resolved before and not about to expire
+are used, and new ones are kept."
+  (let* ((format (or format (if audio-only yt-player-audio-format yt-player-format)))
          (kept (and cache (yt-player--kept-streams video format))))
+    (when audio-only
+      (let ((callback* callback))
+        (setq callback (lambda (streams info)
+                         (funcall callback* (plist-put (copy-sequence streams) :audio-only t)
+                                  info)))))
     (if kept
         (progn
           (yt-process-cancel key)
@@ -395,8 +407,9 @@ non-nil, to the YouTube history, then run
   (unless (yt-video-duration video)
     (setf (yt-video-duration video) (plist-get streams :duration))))
 
-(defun yt-player--start (backend video &optional start)
-  "Resolve VIDEO and play it with BACKEND from START seconds."
+(defun yt-player--start (backend video &optional start audio-only)
+  "Resolve VIDEO and play it with BACKEND from START seconds.
+AUDIO-ONLY non-nil plays its sound alone; see `yt-player-audio-format'."
   (yt-player--load backend)
   (yt-player-display-environment)
   (message "Resolving “%s”..." (yt-player-title video))
@@ -419,6 +432,7 @@ non-nil, to the YouTube history, then run
      (yt-player-report-failure err)
      (unless (eq (plist-get err :type) 'cancelled)
        (run-hook-with-args 'yt-player-resolve-failed-functions video)))
+   :audio-only audio-only
    ;; mpv resolves a video again when its streams fail; VLC cannot.
    :cache (eq backend 'mpv)))
 
@@ -535,6 +549,16 @@ Interactively, play the video at point, or ask for a URL."
 Interactively, play the video at point, or ask for a URL."
   (interactive (list (yt-player--read-video) current-prefix-arg))
   (yt-play video 'mpv from-start))
+
+;;;###autoload
+(defun yt-play-audio (video &optional from-start)
+  "Play the sound of VIDEO alone in mpv, from the start if FROM-START.
+Otherwise resume where you stopped watching.  Interactively, play the
+video at point, or ask for a URL.  \\[yt-player-toggle-audio] brings the
+picture back."
+  (interactive (list (yt-player--read-video) current-prefix-arg))
+  (yt-player--shuffle-stop)
+  (yt-player--start 'mpv video (and (not from-start) (yt-player--resume-position video)) t))
 
 (defun yt-player--selected-videos ()
   "Return the videos in the region or the video at point, or ask for a URL."
@@ -805,6 +829,13 @@ It is not skipped again.  See `yt-sponsorblock-categories'."
     (user-error "Nothing is playing"))
   (yt-player-backend-command yt-player--current-backend 'quit))
 
+;;;###autoload
+(defun yt-player-toggle-audio ()
+  "Switch the video playing between audio only and its picture.
+It goes on from where it is, in its place in the queue."
+  (interactive)
+  (yt-player--command 'toggle-audio))
+
 (dolist (command '(yt-player-pause yt-player-seek-forward yt-player-seek-backward
                    yt-player-seek-forward-more yt-player-seek-backward-more
                    yt-player-faster yt-player-slower yt-player-next yt-player-previous
@@ -818,25 +849,47 @@ It is not skipped again.  See `yt-sponsorblock-categories'."
   "The now-playing text shown by `yt-player-mode'.")
 (put 'yt-player--mode-line 'risky-local-variable t)
 
+(defun yt-player--glyph (char fallback)
+  "Return CHAR as a string if it can be displayed, else FALLBACK."
+  (if (char-displayable-p char) (string char) fallback))
+
 (defun yt-player--segment-string (state)
   "Return the now-playing text for the player STATE, a plist.
-STATE has :title, :time-pos, :duration, :pause, :speed and :idle.
+STATE has :title, :time-pos, :duration, :pause, :speed and :idle,
+and may have :chapter, the title of the chapter playing,
+:playlist-pos (from 0) and :playlist-count, :audio-only and :live,
+and :skipping-off when SponsorBlock segments are not skipped.
 Return \"\" while the player is idle or has no title."
   (let ((title (plist-get state :title))
         (pos (plist-get state :time-pos))
         (duration (plist-get state :duration))
-        (speed (plist-get state :speed)))
+        (speed (plist-get state :speed))
+        (chapter (plist-get state :chapter))
+        (index (plist-get state :playlist-pos))
+        (count (plist-get state :playlist-count)))
     (if (or (plist-get state :idle) (not title))
         ""
       (concat (if (plist-get state :pause) "⏸ " "▶ ")
+              (if (plist-get state :audio-only)
+                  (concat (yt-player--glyph ?♪ "audio") " ")
+                "")
               (truncate-string-to-width title 20 nil nil "…")
-              (if pos
-                  (concat " " (yt-video-format-duration pos)
-                          (if duration (concat "/" (yt-video-format-duration duration)) ""))
+              (cond ((plist-get state :live) " LIVE")
+                    (pos (concat " " (yt-video-format-duration pos)
+                                 (if duration
+                                     (concat "/" (yt-video-format-duration duration))
+                                   "")))
+                    (t ""))
+              (if (and (stringp chapter) (not (string-empty-p chapter)))
+                  (concat " · " (truncate-string-to-width chapter 16 nil nil "…"))
+                "")
+              (if (and (natnump index) (numberp count) (> count 1))
+                  (format " [%d/%d]" (1+ index) count)
                 "")
               (if (and speed (> (abs (- speed 1.0)) 0.005))
                   (format " ×%.2f" speed)
                 "")
+              (if (plist-get state :skipping-off) " skip:off" "")
               " "))))
 
 (defun yt-player-update-mode-line (state)
@@ -932,6 +985,7 @@ Without a region, move to the next row."
   "RET" #'yt-play
   "v" #'yt-play-vlc
   "m" #'yt-play-mpv
+  "M" #'yt-play-audio
   "a" #'yt-enqueue
   "i" #'yt-info
   "o" #'yt-feed-open-channel

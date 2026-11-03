@@ -101,10 +101,14 @@ YouTube accepts the session again.
 | =l=            | the queue: the videos in mpv's playlist      |
 | =z=            | shuffle the queue                            |
 | =U= / =K=      | undo the last SponsorBlock skip / skipping on or off |
+| =M=            | switch the video playing to audio only, or back |
 | =S= / =Q=      | stop / quit mpv                              |
 | =!=            | log of playback problems                     |
 
 The player keys repeat without the prefix: =C-c y <right> <right> <right>=.
+The mode line shows the video playing, its position, the chapter, the
+place in the queue (=[2/5]=), ♪ for audio only, LIVE, and =skip:off=
+while SponsorBlock skipping is off.
 With which-key, =C-c y= shows a short label for each key.
 =M-x yt= and =M-x yt-subscriptions= also open the subscription feed.
 
@@ -115,6 +119,7 @@ the info and queue buffers):
 |---------------+----------------------------------------------------------|
 | =RET=         | play (mpv if installed, else VLC); =C-u RET= from the start |
 | =v= / =m=     | play in VLC / mpv                                        |
+| =M=           | play audio only, in mpv                                  |
 | =a=           | add to the queue (on the region too)                     |
 | =i=           | details: description, chapters (play from there), tags  |
 | =o=           | the uploads of the video's channel                       |

@@ -257,6 +257,43 @@ A sleeping process stands in for mpv."
   (should (equal (yt-player--segment-string '(:title "Idle" :idle t)) ""))
   (should (equal (yt-player--segment-string nil) "")))
 
+;;;; Mode line
+
+(ert-deftest yt-mpv-segment-string-extras ()
+  "The mode line shows the chapter, the queue, audio only, live and skipping."
+  (cl-letf (((symbol-function 'char-displayable-p) (lambda (_) t)))
+    (should (equal (yt-player--segment-string
+                    '(:title "Talk" :time-pos 65 :duration 600 :chapter "Audience questions"
+                             :playlist-pos 1 :playlist-count 5 :audio-only t :skipping-off t))
+                   "▶ ♪ Talk 1:05/10:00 · Audience questi… [2/5] skip:off "))
+    ;; No queue position for a single video, no empty chapter, no time when live.
+    (should (equal (yt-player--segment-string
+                    '(:title "Stream" :time-pos 65 :live t :chapter ""
+                             :playlist-pos 0 :playlist-count 1))
+                   "▶ Stream LIVE ")))
+  (cl-letf (((symbol-function 'char-displayable-p) #'ignore))
+    (should (string-prefix-p "▶ audio Talk"
+                             (yt-player--segment-string '(:title "Talk" :audio-only t))))))
+
+(ert-deftest yt-mpv-state-chapter ()
+  "The player state names the chapter playing, from the resolved streams."
+  (let ((yt-mpv--entries (make-hash-table))
+        (yt-mpv--current 3)
+        (yt-mpv--skipping nil)
+        (yt-mpv--properties '(:chapter 1 :playlist-pos 0 :playlist-count 2)))
+    (puthash 3 (yt-mpv--entry-create
+                :streams '(:chapters ((:time 0.0 :title "Intro") (:time 60.0 :title "Main"))
+                                     :audio-only t))
+             yt-mpv--entries)
+    (let ((state (yt-mpv--state)))
+      (should (equal (plist-get state :chapter) "Main"))
+      (should (= (plist-get state :playlist-count) 2))
+      (should (plist-get state :audio-only))
+      (should (plist-get state :skipping-off)))
+    ;; Before the first chapter.
+    (setq yt-mpv--properties '(:chapter -1))
+    (should-not (plist-get (yt-mpv--state) :chapter))))
+
 ;;;; Connection and messages
 
 (ert-deftest yt-mpv-pending-queue-and-replies ()
@@ -270,13 +307,13 @@ A sleeping process stands in for mpv."
         (yt-test-wait-until (lambda () paused) "pause reply")
         (should (equal paused '(ok nil nil)))
         ;; Observers first, then the queued command.
-        (should (equal (seq-take (yt-mpv-test--names server) 9)
-                       '("observe_property" "observe_property" "observe_property"
-                         "observe_property" "observe_property" "observe_property"
-                         "observe_property" "request_log_messages" "cycle")))
-        (should (equal (mapcar (lambda (m) (nth 2 (plist-get m :command)))
-                               (seq-take (yt-mpv-test--server-received server) 7))
-                       yt-mpv--observed))
+        (let ((observed (length yt-mpv--observed)))
+          (should (equal (seq-take (yt-mpv-test--names server) (+ observed 2))
+                         (append (make-list observed "observe_property")
+                                 '("request_log_messages" "cycle"))))
+          (should (equal (mapcar (lambda (m) (nth 2 (plist-get m :command)))
+                                 (seq-take (yt-mpv-test--server-received server) observed))
+                         yt-mpv--observed)))
         (yt-mpv-send '("seek" 5 "relative") (lambda (_data error) (setq failed error)))
         (yt-test-wait-until (lambda () failed) "seek reply")
         (should (equal failed "error running command"))
@@ -431,8 +468,9 @@ A sleeping process stands in for mpv."
       (should (equal (seq-drop (yt-mpv-test--names server)
                                (cl-position "get_property" (yt-mpv-test--names server)
                                             :test #'equal :from-end t))
-                     '("get_property" "playlist-remove" "loadfile" "playlist-play-index")))
-      (should (member '("playlist-remove" 1)
+                     '("get_property" "loadfile" "playlist-play-index" "playlist-remove")))
+      ;; The failed entry moved down one when the new one went in.
+      (should (member '("playlist-remove" 2)
                       (mapcar (lambda (m) (plist-get m :command))
                               (yt-mpv-test--server-received server))))
       (yt-test-wait-until (lambda () (gethash 2 yt-mpv--entries)) "retry entry")
@@ -553,6 +591,67 @@ A sleeping process stands in for mpv."
       (yt-mpv-test--play-through server (yt-mpv-test--load server video))
       (yt-test-wait-until (lambda () (yt-cache-history)) "history")
       (should (equal (yt-video-id (car (car (yt-cache-history)))) "videohist01")))))
+
+;;;; Audio only
+
+(ert-deftest yt-mpv-play-audio ()
+  "\\[yt-play-audio] resolves the audio-only format and turns the picture off."
+  (yt-mpv-test--with-mpv (ytdlp _mpv)
+    (let ((server (yt-mpv-test--connect))
+          (video (yt-mpv-test--video "videoaudio1")))
+      (yt-test-step ytdlp 1 :out (yt-test-fixture-string "resolve-combined.json"))
+      (should (eq (keymap-lookup yt-video-actions-map "M") #'yt-play-audio))
+      (yt-play-audio video)
+      (let ((load (plist-get (yt-mpv-test--wait-for server "loadfile") :command)))
+        (should (equal (plist-get (plist-get load :options) :vid) "no")))
+      (should (equal (cadr (member "-f" (yt-test-argv ytdlp 1))) "ba/b")))))
+
+(ert-deftest yt-mpv-toggle-audio-in-place ()
+  "Switching to audio only and back goes on from the position, in place.
+The video does not count as started again."
+  (yt-mpv-test--with-mpv (ytdlp _mpv)
+    (let* ((server (yt-mpv-test--connect))
+           (video (yt-mpv-test--video "videotoggl1"))
+           (started 0)
+           (yt-player-started-functions (list (lambda (_) (cl-incf started)))))
+      (setq yt-player--current-backend 'mpv)
+      (yt-test-step ytdlp 1 :out (yt-test-fixture-string "resolve-combined.json"))
+      (yt-test-step ytdlp 2 :out (yt-test-fixture-string "resolve-separate.json"))
+      (let ((id (yt-mpv-test--load server video)))
+        (yt-mpv-test--play-through server id :time-pos 61.7)
+        (yt-test-wait-until (lambda () (equal (plist-get yt-mpv--properties :time-pos) 61.7))
+                            "time-pos")
+        (should (= started 1))
+        ;; It is second in the queue.
+        (push (cons "get_property" (vector (list :id 7) (list :id id :current t)))
+              (yt-mpv-test--server-replies server))
+        (yt-player-toggle-audio))
+      (let ((load (plist-get (yt-mpv-test--wait-for server "loadfile" 2) :command)))
+        (should (equal (plist-get load :flags) "insert-at"))
+        (should (equal (plist-get load :index) 1))
+        (should (equal (plist-get (plist-get load :options) :vid) "no"))
+        (should (equal (plist-get (plist-get load :options) :start) "61")))
+      (should (equal (cadr (member "-f" (yt-test-argv ytdlp 1))) "ba/b"))
+      ;; The new entry plays before the old one goes, which is then below it.
+      (should (equal (seq-drop (yt-mpv-test--names server)
+                               (cl-position "get_property" (yt-mpv-test--names server)
+                                            :test #'equal :from-end t))
+                     '("get_property" "loadfile" "playlist-play-index" "playlist-remove")))
+      (should (equal (plist-get (yt-mpv-test--wait-for server "playlist-remove") :command)
+                     '("playlist-remove" 2)))
+      (yt-test-wait-until (lambda () (yt-mpv--entry-video (yt-mpv--entry 2))) "toggle reply")
+      (yt-mpv-test--play-through server 2 :time-pos 62.0)
+      (yt-test-wait-until (lambda () (string-match-p "♪\\|audio" yt-player--mode-line))
+                          "mode line")
+      (should (= started 1))
+      ;; And back to the picture, in the default format.
+      (push (cons "get_property" (vector (list :id 7) (list :id 2 :current t)))
+            (yt-mpv-test--server-replies server))
+      (yt-player-toggle-audio)
+      (let ((load (plist-get (yt-mpv-test--wait-for server "loadfile" 3) :command)))
+        (should-not (plist-get (plist-get load :options) :vid))
+        (should (equal (plist-get (plist-get load :options) :start) "62")))
+      (should (equal (cadr (member "-f" (yt-test-argv ytdlp 2))) yt-player-format)))))
 
 ;;;; The whole path
 

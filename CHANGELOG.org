@@ -1,6 +1,15 @@
 #+title: yt changelog
 
 * Unreleased
+- =M= plays a video's sound alone (audio-only format, picture off), and
+  =C-c y M= switches the video playing between audio only and its
+  picture, from where it is, in its place in the queue.
+- The mode line shows the chapter playing, the place in the queue
+  (=[2/5]=), ♪ for audio only, LIVE for live streams, and =skip:off=
+  while SponsorBlock skipping is off.
+- A video resolved again after a playback error now plays before the
+  failed entry is removed, so mpv no longer moves on to the next video
+  meanwhile, and it no longer counts as played twice.
 - =T= in a channel's buffer switches between its videos and its past
   live streams, each cached apart.  A channel that never streamed shows
   an empty list.

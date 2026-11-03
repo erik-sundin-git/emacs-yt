@@ -35,6 +35,11 @@ Effort: S (under half a day), M (a day or two), L (more).
   (schema 5), and `T` for a channel's past streams.  Watch Later, Liked
   and your own playlists deferred; the Shorts tab cut (see below).
   Shorts are hidden in the feed by the user's config.  Next: M13.
+- **M13: done** (2026-11-03): audio only on `M` and `C-c y M`, and the
+  richer mode line.  Found on the way: the in-place reload removed the
+  old entry first, which lets mpv start the next one; it now inserts,
+  plays, then removes, and the new entry does not count as a new play.
+  Next: M15.
 
 ## Guiding decisions
 
