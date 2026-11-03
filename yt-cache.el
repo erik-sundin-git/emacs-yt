@@ -166,6 +166,9 @@ That is when the newer schema says its min_reader is ours or older."
           ;; database (some pragmas just return nothing).
           (sqlite-select db "SELECT count(*) FROM sqlite_master")
           (sqlite-pragma db "journal_mode = WAL")
+          ;; Deleted rows (forgotten history) are overwritten, not left
+          ;; in free pages.
+          (sqlite-pragma db "secure_delete = ON")
           (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
             ;; A copy first, whenever an existing cache changes format.
             (when (< 0 version yt-cache--schema-version)
@@ -590,7 +593,13 @@ Each element is (VIDEO . PLAYED-AT), PLAYED-AT in seconds since the epoch."
 (defun yt-cache-clear-history ()
   "Forget every played video, but not what was watched or where you stopped."
   (sqlite-execute (yt-cache-db) "DELETE FROM history")
+  (yt-cache--checkpoint)
   (run-hooks 'yt-history-changed-hook))
+
+(defun yt-cache--checkpoint ()
+  "Write the WAL into the database and empty it.
+The WAL keeps old versions of changed rows; after forgetting, they go."
+  (sqlite-pragma (yt-cache-db) "wal_checkpoint(TRUNCATE)"))
 
 ;;;###autoload
 (defun yt-forget-history ()
@@ -600,6 +609,7 @@ Each element is (VIDEO . PLAYED-AT), PLAYED-AT in seconds since the epoch."
     (let ((ids (mapcar #'car (sqlite-select (yt-cache-db)
                                             "SELECT id FROM videos WHERE watched <> 0"))))
       (sqlite-execute (yt-cache-db) "UPDATE videos SET watched = 0, position = NULL")
+      ;; Clearing the history also empties the WAL.
       (yt-cache-clear-history)
       (when ids
         (run-hook-with-args 'yt-watched-changed-functions ids nil))

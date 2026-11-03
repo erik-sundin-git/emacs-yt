@@ -302,5 +302,18 @@
     (should (equal (mapcar #'yt-video-id (yt-cache-feed "subscriptions")) '("aaaaaaaaaaa")))
     (should-not (yt-cache-get "bbbbbbbbbbb"))))
 
+(ert-deftest yt-cache-forgetting-leaves-no-old-copies ()
+  "Forgotten rows are overwritten, and the WAL is emptied."
+  (yt-test-with-scenario (_ _)
+    (yt-cache-add-history (yt-video--make :id "forgetme111" :title "x"))
+    (yt-cache-set-position "forgetme111" 120)
+    (should (= (caar (sqlite-select (yt-cache-db) "PRAGMA secure_delete")) 1))
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) t)))
+      (yt-forget-history))
+    (let ((wal (concat (yt-cache-file-name) "-wal")))
+      (should (or (not (file-exists-p wal))
+                  (zerop (file-attribute-size (file-attributes wal))))))
+    (should-not (yt-cache-history))))
+
 (provide 'yt-cache-tests)
 ;;; yt-cache-tests.el ends here

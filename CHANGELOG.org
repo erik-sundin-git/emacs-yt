@@ -14,6 +14,9 @@
     back to the newest backup; a locked or newer cache is never taken
     for damaged.  A row that cannot be read is left out instead of
     stopping the whole feed.
+  - Forgetting the history (=yt-forget-history=, =D= in the history)
+    leaves no old copy of the rows in the file: SQLite overwrites deleted
+    rows, and its write-ahead log is emptied.
 
 * 0.3.0 (2026-11-03)
 ** Keys that changed
