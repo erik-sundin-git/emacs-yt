@@ -146,7 +146,7 @@ number of cookies and their domains."
         (yt-doctor--cookie-file)
         (yt-doctor--insert "Sign-in state" (yt-auth-state)
                            (if (eq (yt-auth-state) 'ok) 'success 'warning))
-        (when-let* ((backoff (yt-auth--backing-off)))
+        (when-let* ((backoff (yt-auth-backing-off-p)))
           (yt-doctor--insert "Backing off" (format "%s until %s" (car backoff)
                                                    (format-time-string
                                                     "%H:%M" (cdr backoff)))

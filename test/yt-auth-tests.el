@@ -192,6 +192,82 @@ CALLBACK, if non-nil, is also passed to `yt-auth-export'."
     (yt-test-auth-run (yt-ytdlp-verify-args) :source 'verify)
     (should (string-match-p "LOGIN_INFO" (yt-test-file-string (yt-auth-cookie-file))))))
 
+(ert-deftest yt-auth-write-back-keeps-only-youtube-cookies ()
+  "Write-back keeps the YouTube cookies, the old master, and every login cookie."
+  (yt-test-with-scenario (ytdlp _)
+    (yt-test-install-cookies)
+    (yt-test-step ytdlp 1 :out "{\"entries\": [{\"id\": \"x\"}]}"
+                  :cookies (concat (yt-test-cookies "FAKE-rotated")
+                                   "#HttpOnly_.youtube.com\tTRUE\t/\tTRUE\t0\tVISITOR\tFAKE-v\n"
+                                   ".google.com\tTRUE\t/\tTRUE\t0\tNID\tFAKE-google\n"))
+    (yt-test-auth-run (yt-ytdlp-verify-args) :source 'verify)
+    (let ((master (yt-test-file-string (yt-auth-cookie-file))))
+      (should (string-prefix-p "# Netscape HTTP Cookie File" master))
+      (should (string-match-p "FAKE-rotated" master))
+      (should (string-match-p "#HttpOnly_\\.youtube\\.com.*VISITOR" master))
+      (should-not (string-match-p "google" master)))
+    (should (string-match-p "FAKE-sid" (yt-test-file-string (concat (yt-auth-cookie-file) ".prev"))))
+    (should (= (file-modes (concat (yt-auth-cookie-file) ".prev")) #o600))
+    ;; A copy that lost one of the master's login cookies is not kept.
+    (yt-test-step ytdlp 2 :out "{\"entries\": [{\"id\": \"x\"}]}"
+                  :cookies (concat "# Netscape HTTP Cookie File\n"
+                                   ".youtube.com\tTRUE\t/\tTRUE\t0\tLOGIN_INFO\tFAKE-login\n"
+                                   ".youtube.com\tTRUE\t/\tTRUE\t0\tSAPISID\tFAKE-lost\n"))
+    (yt-test-auth-run (yt-ytdlp-verify-args) :source 'verify)
+    (should-not (string-match-p "FAKE-lost" (yt-test-file-string (yt-auth-cookie-file))))
+    (should-not (directory-files yt-state-directory nil "\\`\\.cookies-"))))
+
+(ert-deftest yt-auth-sweep-and-logout-remove-leftovers ()
+  "Old leftovers go at first use; all of them, and the old master, at logout."
+  (yt-test-with-scenario (_ _)
+    (yt-test-install-cookies)
+    (let* ((runtime (yt-ensure-runtime-directory))
+           (old (lambda (name dir)
+                  (let ((file (expand-file-name name dir)))
+                    (yt-test-write file "FAKE")
+                    (set-file-times file (time-subtract nil 7200))
+                    file)))
+           (old-conf (funcall old "curl-abc.conf" runtime))
+           (old-part (funcall old ".cookies-abc" yt-state-directory))
+           (new-conf (expand-file-name "curl-new.conf" runtime))
+           (dead-socket (expand-file-name "mpv-999999-1.sock" runtime))
+           (own-socket (expand-file-name (format "mpv-%d-1.sock" (emacs-pid)) runtime)))
+      (yt-test-write new-conf "FAKE")
+      (yt-test-write dead-socket "")
+      (yt-test-write own-socket "")
+      (yt-test-write (concat (yt-auth-cookie-file) ".prev") "FAKE")
+      (yt-auth-sweep-leftovers)
+      (should-not (file-exists-p old-conf))
+      (should-not (file-exists-p old-part))
+      (should-not (file-exists-p dead-socket))
+      (should (file-exists-p new-conf))
+      (should (file-exists-p own-socket))
+      (yt-logout)
+      (should-not (file-exists-p new-conf))
+      (should-not (file-exists-p (yt-auth-cookie-file)))
+      (should-not (file-exists-p (concat (yt-auth-cookie-file) ".prev"))))))
+
+(ert-deftest yt-auth-export-timeout-blames-the-keyring ()
+  "An exporter that hangs is stopped, and the message names the keyring."
+  (yt-test-with-scenario (_ export)
+    (yt-auth-test--use-profile)
+    (yt-test-step export 1 :mode "hang")
+    (let ((yt-auth-export-timeout 1)
+          (yt-process-kill-grace 0.2)
+          result)
+      (yt-auth-export (lambda (ok failure) (setq result (list ok failure))))
+      (yt-test-wait-until (lambda () result) "export timeout")
+      (should-not (car result))
+      (should (string-match-p "is the keyring locked" (plist-get (cadr result) :message)))
+      (should (eq (yt-auth-state) 'unknown)))))
+
+(ert-deftest yt-auth-extra-args-deny-abbreviations ()
+  "Abbreviated long options and clustered short ones are refused too."
+  (dolist (arg '("--verb" "--print-traf" "--cookies-from" "--config-loc=x" "-iv" "-qi" "-O"))
+    (should (equal (list arg t) (list arg (and (yt-ytdlp--denied-arg-p arg) t)))))
+  (dolist (arg '("--format" "--no-mtime" "-f" "-i" "best" "--limit-rate=1M"))
+    (should (equal (list arg nil) (list arg (and (yt-ytdlp--denied-arg-p arg) t))))))
+
 (ert-deftest yt-auth-run-reexports-and-retries-once ()
   "An expired session is re-exported, and the run retried once."
   (yt-test-with-scenario (ytdlp export)

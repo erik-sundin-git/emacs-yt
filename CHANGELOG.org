@@ -1,6 +1,19 @@
 #+title: yt changelog
 
 * Unreleased
+- Cookies:
+  - Saving the cookies yt-dlp rotated keeps only the youtube.com ones,
+    requires every login cookie the old file had, and keeps the old
+    file as =cookies.txt.prev=.
+  - Leftover secret files (cookie copies, curl configs holding an
+    authorization header, half-written cookie files, sockets of mpv
+    processes that are gone) are deleted at first use, at =yt-login=,
+    and all of them at =yt-logout=, which also deletes =cookies.txt.prev=.
+  - An exporter waiting for a locked keyring is stopped after 30 s
+    (=yt-auth-export-timeout=), saying so, instead of "yt-dlp failed
+    without an error message" after two minutes.
+  - =yt-ytdlp-extra-args= also refuses abbreviated long options
+    (=--verb=) and clusters of short ones (=-iv=).
 - curl ignores =~/.curlrc= (=--disable= first), so options there such as
   =--verbose=, which would print the request's cookies, cannot reach a
   message or a log; curl's error messages leave out lines about cookies

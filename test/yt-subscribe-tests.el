@@ -298,5 +298,14 @@ With SUBSCRIBED `yes' or `no', the response confirms that state."
       (should-not (string-match-p "Cookie\\|SAPISID\\|FAKE" result)))
     (should-not (directory-files (yt-ensure-runtime-directory) nil "\\`\\(curl\\|cookies\\)-"))))
 
+(ert-deftest yt-subscribe-error-while-preparing-leaves-nothing ()
+  "An error before the request is sent still deletes the cookie copy."
+  (yt-subscribe-test--with (_export _curl)
+    (cl-letf (((symbol-function 'yt-subscribe--write-config)
+               (lambda (&rest _) (error "Disk full"))))
+      (should-error (yt-subscribe--request 'subscribe yt-subscribe-test--id
+                                           :on-success #'ignore :on-error #'ignore)))
+    (should-not (directory-files (yt-ensure-runtime-directory) nil "\\`\\(curl\\|cookies\\)-"))))
+
 (provide 'yt-subscribe-tests)
 ;;; yt-subscribe-tests.el ends here

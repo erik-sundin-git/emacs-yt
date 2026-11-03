@@ -165,7 +165,7 @@ ON-ERROR with a message.  When the session has expired, the cookies
 are exported again and the request is sent once more; RETRIED is
 for internal use."
   (let ((master (yt-auth-cookie-file))
-        (backoff (yt-auth--backing-off)))
+        (backoff (yt-auth-backing-off-p)))
     (cond
      (backoff
       (yt-process-deliver on-error
@@ -173,38 +173,50 @@ for internal use."
                                   (yt-ytdlp-error-message (car backoff))
                                   (format-time-string "%H:%M" (cdr backoff)))))
      ((not (file-exists-p master))
-      (yt-auth--set-state 'no-cookies)
+      (yt-auth-set-state 'no-cookies)
       (yt-process-deliver on-error (yt-ytdlp-error-message 'no-cookies)))
      (t
-      (let* ((copy (yt-auth--copy-cookies master))
-             (authorization (yt-subscribe--authorization
-                             (yt-subscribe--read-sid-cookies copy)
-                             (truncate (yt--now))))
-             (config (and authorization
-                          (yt-subscribe--write-config action channel-id copy authorization)))
-             (cleanup (lambda ()
-                        (ignore-errors (delete-file copy))
-                        (when config
-                          (ignore-errors (delete-file config)))))
-             (retry (lambda ()
-                      (yt-subscribe--request action channel-id :on-success on-success
-                                             :on-error on-error :retried t))))
-        (if (not config)
-            (progn (funcall cleanup)
-                   (yt-auth--set-state 'expired)
-                   (yt-process-deliver on-error (yt-ytdlp-error-message 'expired)))
-          (unless (yt-process-curl
-                   nil :config config :key (list 'yt-subscribe channel-id)
-                   :on-response
-                   (lambda (response)
-                     (funcall cleanup)
-                     (yt-subscribe--handle-response action response retried retry
-                                                    on-success on-error))
-                   :on-error
-                   (lambda (err)
-                     (funcall cleanup)
-                     (funcall on-error (plist-get err :message))))
-            (funcall cleanup))))))))
+      (yt-auth-call-with-cookie-copy
+       (lambda (copy)
+         (yt-subscribe--send action channel-id copy retried on-success on-error)))))))
+
+(defun yt-subscribe--send (action channel-id copy retried on-success on-error)
+  "Send the request ACTION for CHANNEL-ID with the cookie file COPY.
+COPY is deleted when the request is done; RETRIED, ON-SUCCESS and
+ON-ERROR are as for `yt-subscribe--request'."
+  (let* ((config nil)
+         (cleanup (lambda ()
+                    (ignore-errors (delete-file copy))
+                    (when config
+                      (ignore-errors (delete-file config)))))
+         (retry (lambda ()
+                  (yt-subscribe--request action channel-id :on-success on-success
+                                         :on-error on-error :retried t))))
+    ;; Whatever fails from here on, the copy and the config go.
+    (condition-case err
+        (let ((authorization (yt-subscribe--authorization
+                              (yt-subscribe--read-sid-cookies copy)
+                              (truncate (yt--now)))))
+          (setq config (and authorization
+                            (yt-subscribe--write-config action channel-id copy authorization)))
+          (if (not config)
+              (progn (funcall cleanup)
+                     (yt-auth-set-state 'expired)
+                     (yt-process-deliver on-error (yt-ytdlp-error-message 'expired)))
+            (unless (yt-process-curl
+                     nil :config config :key (list 'yt-subscribe channel-id)
+                     :on-response
+                     (lambda (response)
+                       (funcall cleanup)
+                       (yt-subscribe--handle-response action response retried retry
+                                                      on-success on-error))
+                     :on-error
+                     (lambda (err)
+                       (funcall cleanup)
+                       (funcall on-error (plist-get err :message))))
+              (funcall cleanup))))
+      (error (funcall cleanup)
+             (signal (car err) (cdr err))))))
 
 (defun yt-subscribe--handle-response (action response retried retry on-success on-error)
   "Handle curl's RESPONSE, (STATUS . BODY), to the request ACTION.
@@ -217,7 +229,7 @@ sends it again.  ON-SUCCESS and ON-ERROR are as for
       (let ((confirmed (yt-subscribe--confirmed json)))
         (if (or (null confirmed)
                 (eq (eq confirmed t) (eq action 'subscribe)))
-            (progn (yt-auth--set-state 'ok)
+            (progn (yt-auth-set-state 'ok)
                    (funcall on-success))
           (funcall on-error "YouTube did not change the subscription"))))
      ((= status 401)
@@ -225,13 +237,12 @@ sends it again.  ON-SUCCESS and ON-ERROR are as for
           (yt-auth-export (lambda (ok _result)
                             (if ok
                                 (funcall retry)
-                              (yt-auth--set-state 'expired)
+                              (yt-auth-set-state 'expired)
                               (funcall on-error (yt-ytdlp-error-message 'expired)))))
-        (yt-auth--set-state 'expired)
+        (yt-auth-set-state 'expired)
         (funcall on-error (yt-ytdlp-error-message 'expired))))
      ((= status 429)
-      (yt-auth--set-state 'rate-limit)
-      (yt-auth--start-backoff 'rate-limit)
+      (yt-auth-note-failure 'rate-limit)
       (funcall on-error (yt-ytdlp-error-message 'rate-limit)))
      (t
       (funcall on-error (yt-subscribe--error-message status json))))))

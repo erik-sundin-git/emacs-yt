@@ -50,6 +50,10 @@
 (defvar yt-auth-state-change-hook nil
   "Hook run after the sign-in state changes; see `yt-auth-state'.")
 
+(defvar yt-auth-export-timeout 30
+  "Seconds after which the cookie exporter is stopped.
+It waits for the keyring, which may be locked.")
+
 (defvar yt-auth--state 'unknown
   "The sign-in state; see `yt-auth-state'.")
 
@@ -79,6 +83,18 @@ It is one of `unknown', `ok', `no-cookies', `expired', `keyring',
   (setq yt-auth--state state
         yt-auth--state-time (yt--now))
   (run-hooks 'yt-auth-state-change-hook))
+
+(defun yt-auth-set-state (state)
+  "Set the sign-in state to STATE, one of those of `yt-auth-state'.
+For requests yt sends without yt-dlp, such as subscribing."
+  (yt-auth--set-state state))
+
+(defun yt-auth-note-failure (class)
+  "Note a failure of CLASS, such as `rate-limit', of a request yt sent itself.
+Set the sign-in state, and pause requests after a bot check or a
+rate limit."
+  (yt-auth--set-state class)
+  (yt-auth--start-backoff class))
 
 (defun yt-auth-cookie-file ()
   "Return the name of the master cookie file."
@@ -154,6 +170,12 @@ Google session, and its cookies would be stored in a file; use it anyway? ")))
          (problem (or (plist-get summary :error) ""))
          (label (yt-auth-profile-label (yt-auth-profile))))
     (cond
+     ((eq (plist-get err :type) 'timeout)
+      (list :class 'timeout
+            :message (format "Reading the cookies took more than %d s: is the keyring locked?  Unlock it, then try again"
+                             yt-auth-export-timeout)))
+     ((eq (plist-get err :type) 'cancelled)
+      (list :class 'cancelled :message "Reading the cookies was cancelled"))
      ((eq (plist-get err :type) 'missing)
       (list :class 'missing
             :message (format "%s not found: install it (see Installation in yt's README), or set `yt-export-cookies-program'"
@@ -183,9 +205,10 @@ Google session, and its cookies would be stored in a file; use it anyway? ")))
   "Finish the cookie export and call the waiting callbacks with OK and RESULT."
   (let ((waiters (nreverse yt-auth--export-waiters)))
     (setq yt-auth--export-waiters nil)
-    (if ok
-        (cl-incf yt-auth--generation)
-      (yt-auth--set-state (plist-get result :class)))
+    (cond (ok (cl-incf yt-auth--generation))
+          ;; A missing or hanging exporter says nothing about the session.
+          ((memq (plist-get result :class) '(no-cookies keyring bad-profile corrupt-cookies))
+           (yt-auth--set-state (plist-get result :class))))
     (dolist (waiter waiters)
       (with-demoted-errors "yt: %S"
         (funcall waiter ok result)))))
@@ -218,7 +241,7 @@ exporter's summary, a plist; on failure it is a plist with :class and
       (yt-process-run
        yt-export-cookies-program
        (list "--profile" profile "--output" (yt-auth-cookie-file))
-       :key '(yt-auth . export) :parse 'json
+       :key '(yt-auth . export) :parse 'json :timeout yt-auth-export-timeout
        :on-success (lambda (summary _info)
                      (yt-auth--export-done t summary))
        :on-error (lambda (err)
@@ -226,20 +249,45 @@ exporter's summary, a plist; on failure it is a plist with :class and
 
 ;;;; Per-run cookie copies
 
-(defun yt-auth--clean-stale-copies (dir)
-  "Delete cookie copies in DIR older than an hour, once per session."
-  (unless yt-auth--stale-copies-cleaned
-    (setq yt-auth--stale-copies-cleaned t)
-    (dolist (file (directory-files dir t "\\`cookies-.*\\.txt\\'"))
-      (when (time-less-p (file-attribute-modification-time
-                          (file-attributes file))
-                         (time-subtract nil 3600))
-        (ignore-errors (delete-file file))))))
+(defun yt-auth-sweep-leftovers (&optional all)
+  "Delete the secret files that runs which never finished left behind.
+They are cookie copies and curl configs (holding an authorization
+header) in the runtime directory, and partly written cookie files in
+the state directory, if older than an hour, or all of them if ALL is
+non-nil; and the sockets of mpv processes that no longer run."
+  (let ((old (time-subtract nil 3600)))
+    (pcase-dolist (`(,dir . ,regexp)
+                   `((,(yt-ensure-runtime-directory)
+                      . "\\`\\(?:cookies-.*\\.txt\\|curl-.*\\.conf\\)\\'")
+                     (,(yt-ensure-state-directory) . "\\`\\.cookies-")))
+      (dolist (file (directory-files dir t regexp))
+        (when (or all (time-less-p (file-attribute-modification-time (file-attributes file))
+                                   old))
+          (ignore-errors (delete-file file))))))
+  (dolist (socket (directory-files (yt-ensure-runtime-directory) t
+                                   "\\`mpv-\\([0-9]+\\)-[0-9]+\\.sock\\'"))
+    (let ((pid (string-to-number
+                (progn (string-match "mpv-\\([0-9]+\\)-" (file-name-nondirectory socket))
+                       (match-string 1 (file-name-nondirectory socket))))))
+      (unless (or (= pid (emacs-pid)) (process-attributes pid))
+        (ignore-errors (delete-file socket))))))
+
+(defun yt-auth-call-with-cookie-copy (fn)
+  "Call FN with a private copy of the cookie file, which FN must delete.
+If FN signals before it is done with the copy, the copy is deleted
+here.  Return what FN returns."
+  (let ((copy (yt-auth--copy-cookies (yt-auth-cookie-file))))
+    (condition-case err
+        (funcall fn copy)
+      (error (ignore-errors (delete-file copy))
+             (signal (car err) (cdr err))))))
 
 (defun yt-auth--copy-cookies (master)
   "Return a private copy of the cookie file MASTER in the runtime directory."
   (let ((dir (yt-ensure-runtime-directory)))
-    (yt-auth--clean-stale-copies dir)
+    (unless yt-auth--stale-copies-cleaned
+      (setq yt-auth--stale-copies-cleaned t)
+      (yt-auth-sweep-leftovers))
     (let ((copy (with-file-modes #o600
                   (make-temp-file (expand-file-name "cookies-" dir) nil ".txt"))))
       (copy-file master copy t)
@@ -260,20 +308,59 @@ exporter's summary, a plist; on failure it is a plist with :class and
                                    nil t))
               t))))
 
+(defconst yt-auth--login-cookies
+  '("LOGIN_INFO" "SID" "HSID" "SSID" "APISID" "SAPISID"
+    "__Secure-1PSID" "__Secure-3PSID" "__Secure-1PAPISID" "__Secure-3PAPISID")
+  "The cookies of a signed-in YouTube session.")
+
+(defun yt-auth--youtube-lines (file)
+  "Return the Netscape header and the youtube.com cookie lines of FILE.
+yt-dlp may save cookies of other domains into its copy; the master
+file keeps only YouTube's, as the exporter writes it."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (let (lines)
+      (dolist (line (split-string (buffer-string) "\n" t))
+        (let ((domain (car (split-string (string-remove-prefix "#HttpOnly_" line) "\t"))))
+          (when (or (string-prefix-p "# Netscape HTTP Cookie File" line)
+                    (and (string-match-p "\t" line)
+                         (string-match-p "\\`\\.?\\(?:[^.]+\\.\\)*youtube\\.com\\'" domain)))
+            (push line lines))))
+      (nreverse lines))))
+
+(defun yt-auth--cookie-names (lines)
+  "Return the names of the cookies in LINES of a Netscape cookie file."
+  (delq nil (mapcar (lambda (line) (nth 5 (split-string line "\t"))) lines)))
+
 (defun yt-auth--write-back (copy generation)
   "Make the cookie file COPY the new master file, if that is safe.
-It is safe if COPY still holds login cookies and the master file was
-not replaced since GENERATION.  The master is replaced atomically:
-COPY is first copied next to it, then renamed over it."
-  (when (and (= generation yt-auth--generation)
-             (yt-auth--cookie-file-valid-p copy))
+It is safe if the master file was not replaced since GENERATION and
+COPY still holds every login cookie the master has.  Only the
+youtube.com cookies are written.  The old master is kept as
+cookies.txt.prev, and the new one replaces it atomically: it is
+written next to it, then renamed over it."
+  (when (= generation yt-auth--generation)
     (let* ((master (yt-auth-cookie-file))
-           (tmp (with-file-modes #o600
-                  (make-temp-file (expand-file-name ".cookies-"
-                                                    (file-name-directory master))))))
-      (copy-file copy tmp t)
-      (set-file-modes tmp #o600)
-      (rename-file tmp master t))))
+           (lines (yt-auth--youtube-lines copy))
+           (names (yt-auth--cookie-names lines))
+           (needed (seq-intersection (yt-auth--cookie-names (yt-auth--youtube-lines master))
+                                     yt-auth--login-cookies)))
+      (when (seq-every-p (lambda (name) (member name names)) needed)
+        (let ((tmp (with-file-modes #o600
+                     (make-temp-file (expand-file-name ".cookies-"
+                                                       (file-name-directory master))))))
+          (unwind-protect
+              (progn
+                (with-temp-file tmp
+                  (insert (string-join lines "\n") "\n"))
+                (set-file-modes tmp #o600)
+                (when (yt-auth--cookie-file-valid-p tmp)
+                  (with-file-modes #o600
+                    (copy-file master (concat master ".prev") t))
+                  (set-file-modes (concat master ".prev") #o600)
+                  (rename-file tmp master t)))
+            (when (file-exists-p tmp)
+              (ignore-errors (delete-file tmp)))))))))
 
 ;;;; Running yt-dlp with cookies
 
@@ -294,6 +381,11 @@ COPY is first copied next to it, then renamed over it."
               ('bot-check "YouTube asked for a bot check")
               ('rate-limit "YouTube is limiting requests")
               (class (symbol-name class))))))
+
+(defun yt-auth-backing-off-p ()
+  "Return (CLASS . UNTIL) while yt pauses its requests, else nil.
+CLASS is `bot-check' or `rate-limit', and UNTIL a time in seconds."
+  (yt-auth--backing-off))
 
 (defun yt-auth--start-backoff (class)
   "Stop sending requests for a while after a problem of CLASS."
@@ -461,6 +553,7 @@ check that they work.  Use a profile that is signed in only to
 YouTube: the cookies are Google session tokens and are stored in a
 mode 0600 file in `yt-state-directory'."
   (interactive "P")
+  (yt-auth-sweep-leftovers)
   (yt-auth-ensure-profile choose)
   (let ((label (yt-auth-profile-label (yt-auth-profile))))
     (message "Reading YouTube cookies from Chromium profile %s..." label)
@@ -495,11 +588,10 @@ This does not end the session itself; sign out of YouTube in the
 Chromium profile to do that."
   (interactive)
   (let ((master (yt-auth-cookie-file)))
-    (when (file-exists-p master)
-      (delete-file master)))
-  (dolist (file (directory-files (yt-ensure-runtime-directory) t
-                                 "\\`cookies-.*\\.txt\\'"))
-    (ignore-errors (delete-file file)))
+    (dolist (file (list master (concat master ".prev")))
+      (when (file-exists-p file)
+        (delete-file file))))
+  (yt-auth-sweep-leftovers t)
   (cl-incf yt-auth--generation)
   (yt-auth--set-state 'no-cookies)
   (message "Deleted yt's cookies.  To end the session, sign out of YouTube in the Chromium profile"))

@@ -47,13 +47,28 @@
 They would print secrets, change the output yt parses, hide the
 warnings yt classifies, or replace yt's cookie handling.")
 
+(defun yt-ytdlp--denied-arg-p (arg)
+  "Return non-nil if yt-dlp would read ARG as one of `yt-ytdlp--denied-args'.
+yt-dlp accepts any unambiguous start of a long option (--verb for
+--verbose) and clusters of short ones (-iv for -i -v)."
+  (let ((option (car (split-string arg "="))))
+    (cond
+     ((string-prefix-p "--" option)
+      (and (> (length option) 2)
+           (seq-some (lambda (flag)
+                       (and (string-prefix-p "--" flag) (string-prefix-p option flag)))
+                     yt-ytdlp--denied-args)))
+     ((string-match-p "\\`-[[:alnum:]]+\\'" option)
+      (seq-some (lambda (flag)
+                  (and (= (length flag) 2) (string-search (substring flag 1) option)))
+                yt-ytdlp--denied-args)))))
+
 (defun yt-ytdlp--check-extra-args (args)
   "Return ARGS, or signal a `user-error' if one of them is denied."
   (dolist (arg args args)
-    (dolist (flag yt-ytdlp--denied-args)
-      (when (or (equal arg flag) (string-prefix-p (concat flag "=") arg))
-        (user-error "Refusing to pass %s to yt-dlp; remove it from `yt-ytdlp-extra-args'"
-                    arg)))))
+    (when (yt-ytdlp--denied-arg-p arg)
+      (user-error "Refusing to pass %s to yt-dlp; remove it from `yt-ytdlp-extra-args'"
+                  arg))))
 
 (defun yt-ytdlp-args (cookie-file args)
   "Return the complete yt-dlp argument list for ARGS with COOKIE-FILE.
