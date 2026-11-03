@@ -20,7 +20,8 @@ Effort: S (under half a day), M (a day or two), L (more).
   with tests and a green CI run.  Found on the way: `yt-cache.el` used
   `cl-struct-slot-value` without cl-macs at run time (caught by the new
   load check), and a test that raced on busy CI runners.
-- **M11-M15: not started.**  Review the plan again before going on.
+- **M11-M15: not started.**  Reviewed again on 2026-11-03 (see "Second
+  review" at the end): reordered to M12, M11, M14, M13, M15.
 
 ## Guiding decisions
 
@@ -300,120 +301,114 @@ Effort: S (under half a day), M (a day or two), L (more).
   auth state, feed entries, resolve fields present, and which JSON keys
   that yt reads are missing from real output (a list kept in the tests).
 
-## M11: cache safety (about 2-3 days)
+## Remaining work, as revised on 2026-11-03
 
-- **11.1 Backups and rollback safety (S-M).**  `yt-cache-backup`
-  (`VACUUM INTO` a dated file), also run automatically before any
-  migration.  A `min_reader` schema version in `meta`: purely additive
-  migrations keep older versions able to open the cache, instead of
-  the "written by a newer yt" error (yt-cache.el:115-116).  Fixture
-  databases for each old schema, with their data asserted after
-  migration.
-- **11.2 A damaged cache (M).**  `yt-cache--open` re-signals every error
-  (yt-cache.el:119-121) and one bad row fails a whole feed load (165).
-  Recognize corruption by SQLite's error codes (not message text; a
-  locked or newer database is not corrupt); then copy, never move, the
-  db with its `-wal`/`-shm`, and offer `yt-cache-reset`, which first
-  salvages watched marks, positions, history and saved playlists into
-  the fresh database.  Undecodable rows are skipped one by one.  The
-  doctor runs `PRAGMA quick_check`.
-- **11.3 Pruning (S-M).**  Nothing is ever deleted from `videos`; feeds
-  of visited channels keep up to 500 rows; `refreshed:` keys pile up;
-  the thumbnail directory is never cleaned.  An idle `yt-cache-gc`
-  removes videos older than 90 days that are in no feed, history or
-  saved playlist and have no watched mark or position, stale meta keys
-  and old thumbnails; an occasional `VACUUM`; sizes in the doctor.
-- **11.4 Forgetting really forgets (S).**  `PRAGMA secure_delete=ON`, and
-  `wal_checkpoint(TRUNCATE)` after `yt-forget-history` or clearing the
-  history (WAL mode keeps old rows otherwise, yt-cache.el:111).
-- **11.5 Unwatched counts in one query (S).**  The saved playlists
-  decode up to 300 videos per row on every print
-  (yt-playlists.el:73-76, 87); one `GROUP BY` query, the same for the
-  channel stats (yt-channels.el:79-92).
+The second review (summary at the end) reordered and trimmed M11-M15.
+The package is now 8,280 lines of Elisp with 35 options, against the
+ceiling of 8,500 lines and 35 options, so what remains must earn its
+lines: M12 comes first because it removes more code than it adds, and
+four items are deferred or cut.  The new ceiling is 9,000 lines and 37
+options; the items below add about 550 lines and two options.
 
-## M12: lists and keys (about 3-4 days; needs decisions 1-2)
+### M12: lists and keys (first; about 1 session)
 
 - **12.1 Snapshot tests first (S).**  Buffer text and header line of the
   feed, channels, playlists, history and queue, with a fixed clock and
   width, before anything moves.
-- **12.2 A shared list base (M).**  `yt-list.el` (from 8.9) gets the
-  `yt-feed-*` faces (names kept), the header and empty-message
-  helpers, `yt-channel-page-url` (the format string is repeated,
-  yt-feed.el:985, 995, yt-channels.el:76) and a buffer-local
-  `yt-channel-at-point-function` (replacing the `fboundp` reach into
-  yt-channels, yt-feed.el:51, 999).  History, channels and playlists
-  derive from `yt-list-mode` (`:interactive nil`); the feed and the
-  queue keep their own code.  Keymaps state their parents explicitly
-  (`define-derived-mode` does not override an existing `:parent`):
-  `(make-composed-keymap yt-video-actions-map yt-list-mode-map)`.
-  Filters use the feed's syntax everywhere (a separate commit, since it
-  changes behaviour).  Header lines read buffer-local flags updated
-  from the change hooks, not SQLite on every redisplay
-  (yt-feed.el:543-549).
+- **12.2 A shared list base (M, about -150 lines).**  `yt-list.el` (which
+  now holds the column fitting and the embark loader) gets the
+  `yt-feed-*` faces (names kept), the header and empty-message helpers,
+  `yt-channel-page-url` (the URL format is repeated in yt-feed.el and
+  yt-channels.el) and a buffer-local `yt-channel-at-point-function`
+  (replacing the `fboundp` reach from yt-feed into yt-channels).
+  History, channels and playlists derive from `yt-list-mode`
+  (`:interactive nil`); the feed and the queue keep their own code.
+  Keymaps state their parents explicitly (`define-derived-mode` does not
+  override an existing `:parent`).  Filters use the feed's syntax
+  everywhere, in a separate commit since it changes behaviour.  Header
+  lines read buffer-local flags instead of querying SQLite on every
+  redisplay.
 - **12.3 Consistent keys (S).**  In every yt list: `j` is all of
-  `yt-map` (`j c` = `C-c y c`); `P` the player (channels and playlists
-  lack it today, yt-channels.el:232, yt-playlists.el:224); `L`, `G`,
-  `C` (clear filters), `b`; `/` filters (`s` stays one release as an
-  alias that says so); `o` opens in playlists; `z` shuffles the queue;
-  `=` repeats.  Data-changing keys confirm: `D` in history with
-  `yes-or-no-p`, unsubscribing as now.  One short hint line per view;
-  with no cookies the feed lists the three setup steps.  A test that
-  every interactive command is bound, or on an M-x-only allowlist.
-- **12.4 The mpv playlist becomes the queue (S, decision 1).**
-  `*yt-queue*`, label "queue (mpv)", `define-obsolete-function-alias`
-  and `define-obsolete-variable-alias` (with a version) for
-  `yt-playlist-mode`, its map, hook and commands.
-  `yt-player-file-started-functions` becomes
-  `yt-player-started-functions` (new since 0.1.0, so no alias).
-- **12.5 Public backend API and docs (S).**  yt-mpv and yt-vlc use
-  eight private `yt-player--` functions (yt-mpv.el:517, 520-521;
-  yt-vlc.el:93, 102); make them public, add
-  `yt-player-backend-exited` and `yt-player-backend-now-playing`
-  (needed by 13.2 and 15.1), and document the generics and the command
-  vocabulary.  docs/PLAN.md: the module table, the dependency graph,
-  the privacy notes (SponsorBlock, subscribe), the promised live tests.
+  `yt-map` (`j c` = `C-c y c`); `P` the player (the channels and
+  playlists lists still lack it); `L`, `G`, `C` (clear filters), `b`;
+  `/` filters, `s` staying one release as an alias that says so; `o`
+  opens in playlists; `z` shuffles the queue; `=` repeats.  `D` in the
+  history asks with `yes-or-no-p`.  One short hint line per view; with
+  no cookies the feed lists the three setup steps.  A test that every
+  interactive command is bound somewhere, or on an M-x-only allowlist.
+- **12.4 The mpv playlist becomes the queue (S).**  `*yt-queue*`, label
+  "queue (mpv)", obsolete aliases with a version for `yt-playlist-mode`,
+  its map, hook and commands; `yt-player-file-started-functions` becomes
+  `yt-player-started-functions` (not in 0.1.0, so no alias).
+- **12.5 Public backend API and docs (S).**  yt-mpv and yt-vlc still use
+  private `yt-player--` functions; make those public, add
+  `yt-player-backend-now-playing` (for 13.2 and 15.1), and document the
+  generics and the command vocabulary.  docs/PLAN.md now lags further:
+  its module table and dependency graph lack yt-list, yt-url, yt-history,
+  yt-subscribe and yt-sponsorblock, and its privacy notes lack
+  SponsorBlock, subscribing and the curl helper.  README's key tables
+  follow 12.3.
+- **Release 0.3.0 (S).**  The keys change, so the CHANGELOG's Unreleased
+  section (long by now) becomes 0.3.0, with a "Keys that changed" list.
 
-## M13: playback (about 1-2 days)
+### M11: cache safety (second; about half a session)
 
-- **13.1 Audio only (S).**  `M` plays a video as audio, `C-c y M`
-  switches the playing one: resolve `bestaudio` and load that URL alone
-  (with DASH, `vid=no` would keep the video stream downloading), at
-  the current position through the 8.6 helper; ♪ in the mode line.
-- **13.2 Mode line (S).**  Chapter, queue position `2/5`, ♪, LIVE, a
-  marker when skipping is off, with `char-displayable-p` fallbacks for
-  TTY frames.
-- **13.3 Fullscreen toggle (S).**
+- **11.1 Backups and rollback safety (S-M).**  `yt-cache-backup`
+  (`VACUUM INTO` a dated file), run automatically before any migration;
+  a `min_reader` version in `meta`, so that additive migrations keep an
+  older yt able to open the cache instead of "written by a newer yt"
+  after a Home Manager rollback; fixture databases of each old schema,
+  their data asserted after migrating.  The doctor shows the schema
+  version and the file's size.  Needed before 14.2's new table.
+- **11.2 A damaged cache (S-M, simplified).**  Recognize corruption by
+  SQLite's error codes (a locked or newer database is not corrupt), copy
+  the database with its `-wal`/`-shm` aside, start a fresh one, and say
+  where the copy and the latest backup are.  No salvage code: 11.1's
+  backups cover that.  Undecodable rows are skipped one by one.
+- **11.4 Forgetting really forgets (S).**  `PRAGMA secure_delete=ON`, and
+  `wal_checkpoint(TRUNCATE)` after `yt-forget-history` or clearing the
+  history.
+- **11.5 Unwatched counts in one query (S).**  The saved playlists still
+  decode every cached video of every playlist on each print; one
+  `GROUP BY` query, and the same for the channel statistics.
 
-## M14: your account and channels (about 2-3 days)
+### M14: your account and channels (third; about 1 session)
 
 - **14.1 Watch Later, Liked and your YouTube playlists (M, read-only).**
-  yt-dlp's `:ytwatchlater` and `:ytfav` (lists WL and LL) and
-  `feed/playlists` (the same shape as a channel's playlists).  A source
-  `(account KIND)` (every `pcase` on sources changes: yt-feed.el:168,
-  182, 542, 999, 1012); `C-c y a` submap.  An auth source on which empty
-  output is fine, with a pattern for "playlist does not exist" as
-  expired; the `playlist_channel` fallback (yt-video.el:105-108) off for
-  these, or videos get credited to your own channel.
-  `yt-forget-history` and `yt-logout` clear them.  Checked by hand once.
-- **14.2 Mute channels (S-M).**  An additive `channel_prefs` table (the
-  channels table is rewritten on every refresh, yt-cache.el:329), safe
-  under 11.1; muted channels hidden from the feed by default, `t m`
-  shows them; `M` in the channels list.  Shorts in the feed have no
-  channel, so muting cannot hide them.
+  As planned: yt-dlp's `:ytwatchlater`, `:ytfav` and `feed/playlists`; a
+  source `(account KIND)`; `C-c y a`.  Its auth source must not treat
+  empty output as expired at all: 8.4 now reports an empty feed after a
+  fresh export as "no videos", but only after a re-export, which may ask
+  for the keyring; an empty Watch Later is normal.  The
+  `playlist_channel` fallback is off for these sources.  Checked once
+  with the smoke test's setup.
+- **14.2 Mute channels (S-M).**  An additive `channel_prefs` table, after
+  11.1; muted channels hidden from the feed by default, `t m` shows them.
+  The key is `x` ("exclude") in the feed and the channels list, not `M`,
+  which 13.1 takes for audio.  Shorts have no channel, so muting cannot
+  hide them.
 - **14.3 Streams and Shorts tabs (S).**  `T` in a channel cycles videos,
-  streams and shorts (only `/videos` today, yt-ytdlp.el:84); a missing
-  tab is an empty list, not an error.
+  streams and shorts; a missing tab is an empty list.
 
-## M15: notes (about 1 day)
+### M13: playback (fourth; about half a session; decision 4)
 
-- **15.1 Org links (S-M).**  In `yt-org.el`, which requires `ol` and is
-  loaded once org is (through `after-load-functions`): a private link
-  type with only a `:store` function, which in yt buffers stores a
-  plain `https://www.youtube.com/watch?v=ID` link (your org-roam is
-  shared with Logseq), with `&t=N` when that video is playing, and
-  "Title — Channel".  Never stream URLs or tracking parameters.
-- **15.2 eldoc (S).**  On rows: the full title, channel, exact date and
-  resume position (titles are truncated in the columns).
+- **13.1 Audio only (S).**  `M` plays a video as audio, `C-c y M`
+  switches the playing one: resolve `bestaudio` and load that URL alone,
+  at the current position, through the in-place reload helper of 8.6.
+  The stream cache keeps it under its own format, so switching back and
+  forth costs one resolve each way at most.
+- **13.2 Mode line (S).**  The chapter (observing mpv's `chapter`
+  property, which 9.6 made meaningful), the queue position `2/5`
+  (`playlist-pos` and `playlist-count`), ♪, LIVE, and a marker when
+  skipping is off, with `char-displayable-p` fallbacks.
+
+### M15: notes (last; small)
+
+- **15.1 Org links (S-M).**  As planned: a private link type with only a
+  `:store` function, storing plain `https://www.youtube.com/watch?v=ID`
+  links (`&t=N` when that video plays) and "Title — Channel".  With 9.7's
+  handler on, following such a link in org plays it in yt from that
+  time, so no `:follow` is needed.
 
 ## Deferred
 
@@ -443,6 +438,11 @@ With a reason each; any can come back on request.
 - **Brand accounts:** subscribe sends `X-Goog-AuthUser: 0` and no
   `X-Goog-PageId` (yt-subscribe.el:128); document it.
 - **Two Emacs processes** racing on the cookie file.
+- **Pruning the cache (was 11.3):** the sandbox's database is 388 KB
+  after weeks of use; at about 100 new videos a day the real one grows
+  some 10 MB a year.  Worth doing when the doctor's size (11.1) says so.
+- **eldoc on rows (was 15.2):** the Title column now fits the window, so
+  long titles are seldom cut.
 
 ## Cut
 
@@ -457,6 +457,7 @@ With a reason each; any can come back on request.
   audio URL is not prefetched.
 - org-protocol, a consult buffer source, embark channel and playlist
   targets, coverage reports, broad hook renames.
+- A fullscreen toggle (was 13.3): mpv's own `f` does it in its window.
 
 ## Decisions for you
 
@@ -469,6 +470,9 @@ With a reason each; any can come back on request.
    release tags?
 6. Scope: all of M8-M15 (about 20 working days), or M8-M10 first and
    decide again?
+
+7. Audio only on `M` (13.1), and muting on `x` (14.2)?
+8. The new ceiling of 9,000 lines and 37 options?
 
 ### Taken on 2026-11-03
 
@@ -516,3 +520,28 @@ With a reason each; any can come back on request.
   D-Bus or a display.
 - **Scope:** from about 80 items to about 40; transient, notifications,
   search filters, bookmarks and packaging for others deferred.
+
+## Second review (2026-11-03, after M8-M10)
+
+- **Size.**  M8-M10 added about 1,100 lines (8,280 now) and six
+  options (35), reaching the ceiling.  What remains was estimated at
+  about +900 lines; with 11.3, 13.3 and 15.2 deferred or cut and 11.2
+  simplified, about +550, under a raised ceiling of 9,000.
+- **Order.**  M12 first: it is the only milestone that removes code, it
+  fixes keys that are missing today (`P` in the channels and playlists
+  lists), and the keys change is the natural point for release 0.3.0.
+  M11 then, before M14, whose new table needs 11.1's rollback safety.
+  M14 before M13: Watch Later and muting matter more day to day than
+  audio only.
+- **What M8-M10 changed for the rest.**  The stream cache (9.4) keeps
+  audio-only streams under their own format (13.1); chapters (9.6) make
+  a chapter in the mode line possible (13.2); the link handler (9.7)
+  makes stored org links play in yt without a `:follow` (15.1); the
+  empty-feed fix (8.4) is not enough for an empty Watch Later (14.1).
+- **A key clash.**  13.1 and 14.2 both wanted `M`; muting moves to `x`.
+- **Measured.**  The sandbox cache is 388 KB and 20 thumbnails, which
+  is why pruning waits.  The smoke test (10.7) passes against the real
+  YouTube, so the yt-dlp-dependent items start from a working base.
+- **Unchanged.**  The deferred and cut lists stand; nothing in M8-M10
+  argued for bringing one of them back.
+
