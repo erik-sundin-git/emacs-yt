@@ -125,6 +125,7 @@ the info and playlist buffers):
 | =s= or =/=    | filter: words, =@channel=, =!exclude=                    |
 | =c= / =C=     | show one channel / clear the filters                     |
 | =t w=, =t s=, =t u= | hide watched videos, Shorts, upcoming streams      |
+| =t n=         | show only the videos new since your last visit (◆)      |
 | =t i=         | thumbnails                                               |
 | =l=           | the channels                                             |
 | =+= / =-=     | subscribe to / unsubscribe from the channel at hand; in a playlist: save it in yt / forget it |
@@ -137,6 +138,10 @@ In the channels list, =o= shows a channel's uploads, =O= its playlists, and
 A channel's playlists, and the saved ones (=C-c y P=), open with =RET= in
 playlist order; =+= saves the playlist at point, =-= or =d= forgets it, =z=
 shuffles it, and =b= opens it in a browser.
+
+In the subscription feed, ● marks a video you have not watched and ◆ one
+that arrived since your last visit (when you last opened the feed, at
+least ten minutes earlier); the header line counts them.
 
 The channel at hand is the channel of the video at point, or the channel
 whose uploads the buffer shows; its header line says whether you subscribe

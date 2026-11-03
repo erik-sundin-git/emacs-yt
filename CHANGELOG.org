@@ -1,6 +1,9 @@
 #+title: yt changelog
 
 * Unreleased
+- The subscription feed marks with ◆ the videos that arrived since your
+  last visit, counts them in the header line ("◆ 3 new since 5h ago"),
+  and =t n= shows only those.
 - The Title column of the feed, the history and the player's playlist
   fits the window: in a half-width window age and duration stay visible,
   and a wide one shows long titles.  The Channel column gives way in very

@@ -252,6 +252,44 @@ YTDLP is bound to the scenario directory of the fake yt-dlp."
                      '("newvideo01" "newvideo02")))
       (should yt-feed--error))))
 
+(ert-deftest yt-feed-marks-videos-new-since-last-visit ()
+  "Videos that arrived since your last visit are marked, counted and filterable."
+  (yt-feed-test--with-feed ytdlp
+    (let* ((now yt-feed-test--now)
+           (yt--now-function (lambda () now)))
+      (yt-test-step ytdlp 1 :out (yt-test-fixture-string "feed.ndjson"))
+      (with-current-buffer (yt-feed-test--open)
+        ;; The first visit: nothing is new yet.
+        (should-not yt-feed--last-visit)
+        (should-not (string-match-p "◆" (buffer-string)))
+        ;; An hour later a refresh brings a new video, and you look again.
+        (setq now (+ now 3600))
+        (yt-test-step ytdlp 2 :out (concat (yt-feed-test--entry "newvideo01")
+                                           (yt-test-fixture-string "feed.ndjson")))
+        (yt-feed-refresh)
+        (yt-feed-test--wait (current-buffer))
+        (yt-feed-subscriptions)
+        (should (= yt-feed--last-visit yt-feed-test--now))
+        (goto-char (point-min))
+        (should (re-search-forward "^◆ Fake Channel Three +Video newvideo01" nil t))
+        (should (get-text-property (match-beginning 0) 'face))
+        (should (string-match-p "◆ 1 new since 1h ago" (yt-feed--header-line)))
+        (should (= (seq-count (lambda (line) (string-prefix-p "◆" line))
+                              (split-string (buffer-string) "\n"))
+                   1))
+        ;; t n shows only the new ones.
+        (should (eq (keymap-lookup yt-feed-mode-map "t n") #'yt-feed-toggle-only-arrived))
+        (yt-feed-toggle-only-arrived)
+        (should (equal (yt-feed-test--ids) '("newvideo01")))
+        (yt-feed-toggle-only-arrived)
+        ;; Looking again soon after is the same visit.
+        (setq now (+ now 60))
+        (yt-feed-subscriptions)
+        (should (= yt-feed--last-visit yt-feed-test--now))
+        ;; Watched videos are not counted.
+        (yt-mark-watched (yt-cache-get "newvideo01"))
+        (should-not (string-match-p "new since" (yt-feed--header-line)))))))
+
 (ert-deftest yt-feed-full-refresh-cancels-running-one ()
   "\\[yt-feed-refresh-all] cancels a running refresh and fetches everything."
   (yt-feed-test--with-feed ytdlp

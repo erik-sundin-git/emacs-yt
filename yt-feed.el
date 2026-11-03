@@ -105,6 +105,18 @@
   :group 'yt-feed
   :package-version '(yt . "0.1.0"))
 
+(defface yt-feed-arrived-marker '((t :inherit warning))
+  "Face for the marker of a video that arrived since your last visit."
+  :group 'yt-feed
+  :package-version '(yt . "0.2.0"))
+
+(defvar yt-feed-visit-gap 600
+  "Seconds without opening the subscription feed that end a visit.
+Videos that arrived since the visit before are marked as new.")
+
+(defvar-local yt-feed--last-visit nil
+  "When you last looked at the subscription feed before now, or nil.")
+
 ;;;; Buffer state
 
 (defconst yt-feed-subscriptions-buffer "*yt: Subscriptions*"
@@ -240,6 +252,7 @@ FILTER."
         (channel (downcase (or (yt-video-channel video) "")))
         (shown (plist-get filter :channel)))
     (and (not (and (plist-get filter :hide-watched) (yt-video-watched video)))
+         (or (not (plist-get filter :only-arrived)) (yt-feed--arrived-p video))
          (not (and (plist-get filter :hide-shorts) (yt-video-short-p video)))
          (not (and (plist-get filter :hide-upcoming)
                    (memq (yt-video-live-status video) '(is_upcoming is_live))))
@@ -256,6 +269,28 @@ FILTER."
                             (_ (or (string-search text title)
                                    (string-search text channel))))))
                       terms))))
+
+(defun yt-feed--arrived-p (video)
+  "Return non-nil if VIDEO arrived since your last visit to the feed."
+  (and yt-feed--last-visit (yt-video-fetched-at video)
+       (> (yt-video-fetched-at video) yt-feed--last-visit)))
+
+(defun yt-feed--arrived-count ()
+  "Return how many unwatched videos arrived since your last visit."
+  (seq-count (lambda (video) (and (not (yt-video-watched video)) (yt-feed--arrived-p video)))
+             yt-feed--videos))
+
+(defun yt-feed--note-visit ()
+  "Note that you look at the subscription feed now.
+The visit before is kept in `yt-feed--last-visit', unless you looked
+less than `yt-feed-visit-gap' seconds ago, which is the same visit."
+  (let ((now (truncate (yt--now)))
+        (before (yt-cache-meta "visited:subscriptions")))
+    (when (or (not yt-feed--last-visit)
+              (not before)
+              (>= (- now before) yt-feed-visit-gap))
+      (setq yt-feed--last-visit before))
+    (yt-cache-set-meta "visited:subscriptions" now)))
 
 (defun yt-feed--filtered-videos ()
   "Return the videos of this buffer that pass the filter, in feed order."
@@ -276,6 +311,8 @@ FILTER."
                                        "upcoming")))))
       (when hidden
         (push (concat "hiding " (string-join hidden ", ")) parts)))
+    (when (plist-get yt-feed--filter :only-arrived)
+      (push "only new since your last visit" parts))
     (and parts (string-join (nreverse parts) ", "))))
 
 ;;;; Rows
@@ -326,7 +363,9 @@ FILTER."
           (vconcat
            (and (yt-feed--thumbnails-p) (list (yt-feed--thumbnail-cell video)))
            (list
-           (if watched " " (propertize "●" 'face 'yt-feed-new-marker))
+           (cond (watched " ")
+                 ((yt-feed--arrived-p video) (propertize "◆" 'face 'yt-feed-arrived-marker))
+                 (t (propertize "●" 'face 'yt-feed-new-marker)))
            (propertize (or (yt-video-channel video) "") 'face 'yt-feed-channel)
            (concat (yt-feed--badge video)
                    (propertize (or (yt-video-title video) (yt-video-id video))
@@ -436,7 +475,9 @@ Return nil if no filter is on."
                       (and (plist-get filter :hide-shorts)
                            "hiding Shorts (\\[yt-feed-toggle-hide-shorts] shows them)")
                       (and (plist-get filter :hide-upcoming)
-                           "hiding upcoming videos (\\[yt-feed-toggle-hide-upcoming] shows them)")))))
+                           "hiding upcoming videos (\\[yt-feed-toggle-hide-upcoming] shows them)")
+                      (and (plist-get filter :only-arrived)
+                           "showing only new ones (\\[yt-feed-toggle-only-arrived] shows all)")))))
     (and reasons
          (substitute-command-keys
           (concat "\\<yt-feed-mode-map>"
@@ -583,6 +624,11 @@ Stop the timer when no feed buffer is left."
            (if yt-feed--refreshed-at
                (format "updated %s" (yt-feed--ago yt-feed--refreshed-at))
              "never updated")
+           (when-let* ((visit yt-feed--last-visit)
+                       (arrived (yt-feed--arrived-count))
+                       ((> arrived 0)))
+             (propertize (format "◆ %d new since %s" arrived (yt-feed--ago visit))
+                         'face 'yt-feed-arrived-marker))
            (yt-feed--filter-description)
            (if (= count total)
                (format "%d videos" total)
@@ -869,6 +915,13 @@ to the channel of the video at point."
   (interactive nil yt-feed-mode)
   (yt-feed--toggle :hide-shorts "Shorts"))
 
+(defun yt-feed-toggle-only-arrived ()
+  "Toggle whether the feed shows only videos new since your last visit."
+  (interactive nil yt-feed-mode)
+  (let ((on (not (plist-get yt-feed--filter :only-arrived))))
+    (yt-feed--set-filter :only-arrived on)
+    (message (if on "Showing only videos new since your last visit" "Showing all videos"))))
+
 (defun yt-feed-toggle-hide-upcoming ()
   "Toggle whether the feed hides upcoming and live streams."
   (interactive nil yt-feed-mode)
@@ -881,6 +934,7 @@ to the channel of the video at point."
   "w" #'yt-feed-toggle-hide-watched
   "s" #'yt-feed-toggle-hide-shorts
   "u" #'yt-feed-toggle-hide-upcoming
+  "n" #'yt-feed-toggle-only-arrived
   "i" #'yt-feed-toggle-thumbnails)
 
 (defvar-keymap yt-feed-mode-map
@@ -1023,7 +1077,11 @@ The feed is not refreshed if that happened less than
 The feed is not refreshed if that happened less than
 `yt-feed-refresh-interval' seconds ago."
   (interactive)
-  (yt-feed--show 'subscriptions yt-feed-subscriptions-buffer))
+  (let ((buffer (yt-feed--show 'subscriptions yt-feed-subscriptions-buffer)))
+    (with-current-buffer buffer
+      (yt-feed--note-visit)
+      (yt-feed--redisplay))
+    buffer))
 
 ;;;###autoload
 (defun yt-feed-channel (id url name)
