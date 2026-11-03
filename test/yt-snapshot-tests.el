@@ -30,7 +30,9 @@ YTDLP is bound to the fake yt-dlp's directory."
      (ignore _export)
      (yt-test-install-cookies)
      (cl-letf (((symbol-function 'yt-list--window-width) (lambda () 100)))
-       (let ((yt--now-function (lambda () yt-snapshot-test--now))
+       ;; substitute-command-keys quotes by the locale otherwise.
+       (let ((text-quoting-style 'curve)
+             (yt--now-function (lambda () yt-snapshot-test--now))
              (yt-feed-refresh-interval 900)
              (yt-channels-refresh-interval 86400))
          (save-window-excursion
