@@ -290,6 +290,27 @@ YTDLP is bound to the scenario directory of the fake yt-dlp."
         (yt-mark-watched (yt-cache-get "newvideo01"))
         (should-not (string-match-p "new since" (yt-feed--header-line)))))))
 
+(ert-deftest yt-feed-mark-all-watched-and-undo ()
+  "\\`W' marks the shown unwatched videos watched; \\`u' right after undoes it."
+  (yt-feed-test--with-feed ytdlp
+    (yt-test-step ytdlp 1 :out (yt-test-fixture-string "feed.ndjson"))
+    (with-current-buffer (yt-feed-test--open)
+      (should (eq (keymap-lookup yt-feed-mode-map "W") #'yt-feed-mark-all-watched))
+      (yt-feed-filter-channel '("UCfakechannel00000000001" . "Fake Channel One"))
+      (let ((shown (yt-feed-test--ids))
+            prompt)
+        (let ((overriding-terminal-local-map nil)
+              (pre-command-hook nil))
+          (cl-letf (((symbol-function 'y-or-n-p) (lambda (p) (setq prompt p) t)))
+            (yt-feed-mark-all-watched))
+          (should (string-match-p (format "the %d unwatched videos" (length shown)) prompt))
+          (should (seq-every-p (lambda (id) (yt-video-watched (yt-cache-get id))) shown))
+          ;; Videos the filter hides are left alone.
+          (should-not (yt-video-watched (yt-cache-get "fakevideo02")))
+          ;; u, the next key, undoes it.
+          (funcall (lookup-key overriding-terminal-local-map "u"))
+          (should-not (seq-some (lambda (id) (yt-video-watched (yt-cache-get id))) shown)))))))
+
 (ert-deftest yt-feed-full-refresh-cancels-running-one ()
   "\\[yt-feed-refresh-all] cancels a running refresh and fetches everything."
   (yt-feed-test--with-feed ytdlp

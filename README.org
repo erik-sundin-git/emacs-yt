@@ -126,6 +126,7 @@ the info and playlist buffers):
 | =c= / =C=     | show one channel / clear the filters                     |
 | =t w=, =t s=, =t u= | hide watched videos, Shorts, upcoming streams      |
 | =t n=         | show only the videos new since your last visit (◆)      |
+| =W=           | mark every video shown as watched (=u= right after undoes it) |
 | =t i=         | thumbnails                                               |
 | =l=           | the channels                                             |
 | =+= / =-=     | subscribe to / unsubscribe from the channel at hand; in a playlist: save it in yt / forget it |

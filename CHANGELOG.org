@@ -1,6 +1,8 @@
 #+title: yt changelog
 
 * Unreleased
+- =W= in a feed marks every unwatched video shown as watched, after
+  confirmation; =u= right after undoes it.
 - The subscription feed marks with ◆ the videos that arrived since your
   last visit, counts them in the header line ("◆ 3 new since 5h ago"),
   and =t n= shows only those.

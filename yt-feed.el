@@ -817,13 +817,24 @@ FULL, cancel a running refresh and fetch `yt-feed-limit' videos."
 ;;;; Commands on the feed
 
 (defun yt-feed-mark-all-watched ()
-  "Mark every video shown in the feed as watched."
+  "Mark every video shown in the feed as watched, after confirmation.
+The filters apply: hidden videos are left alone.  \\`u' right after
+undoes it."
   (interactive nil yt-feed-mode)
   (let ((videos (seq-remove #'yt-video-watched (yt-feed--filtered-videos))))
     (if (not videos)
         (message "No unwatched videos are shown")
-      (when (yes-or-no-p (format "Mark %d videos as watched? " (length videos)))
-        (yt-mark-watched videos)))))
+      (when (y-or-n-p (format "Mark the %d unwatched videos shown as watched? "
+                              (length videos)))
+        (yt-mark-watched videos)
+        (set-transient-map
+         (define-keymap "u" (lambda ()
+                              (interactive)
+                              (yt-mark-watched videos t)
+                              (message "Marked %d videos as not watched again"
+                                       (length videos)))))
+        (message "Marked %d videos as watched; u right away undoes it"
+                 (length videos))))))
 
 ;;;; Filter commands
 
@@ -949,6 +960,7 @@ to the channel of the video at point."
   "t" (cons "toggle" yt-feed-toggle-map)
   "l" #'yt-channels
   "z" #'yt-feed-shuffle
+  "W" #'yt-feed-mark-all-watched
   "+" #'yt-feed-add
   "-" #'yt-feed-remove
   "L" #'yt-login)
