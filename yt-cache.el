@@ -47,7 +47,7 @@ Each function is called with a list of video ids and the new state,
 non-nil for watched.")
 
 (defvar yt-history-changed-hook nil
-  "Hook run after the list of videos you played changed.")
+  "Hook run after the list of videos you played, or a resume position, changed.")
 
 (defvar yt-subscriptions-changed-functions nil
   "Abnormal hook run after you subscribed to a channel or unsubscribed.
@@ -431,9 +431,11 @@ Each has :id, :title, :channel, :channel-id and :url."
   value)
 
 (defun yt-cache-set-position (id position)
-  "Remember POSITION, in seconds or nil, as the resume position of ID."
+  "Remember POSITION, in seconds or nil, as the resume position of ID.
+Then run `yt-history-changed-hook', since the history shows it."
   (sqlite-execute (yt-cache-db) "UPDATE videos SET position = ? WHERE id = ?"
-                  (list position id)))
+                  (list position id))
+  (run-hooks 'yt-history-changed-hook))
 
 (defun yt-cache--id (video-or-id)
   "Return the id of VIDEO-OR-ID, a `yt-video' or an id string."

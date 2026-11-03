@@ -50,6 +50,15 @@
 (defvar-local yt-history--table nil
   "Hash table mapping the ids of the videos shown to the videos.")
 
+(defvar-local yt-history--played-at nil
+  "Hash table mapping the ids of the videos shown to when they were played.")
+
+(defvar-local yt-history--stale nil
+  "Non-nil if the history changed while this buffer was not shown.")
+
+(defvar yt-history--refresh-timer nil
+  "Timer that prints the history buffer again, or nil.")
+
 (defvar-local yt-history--query nil
   "The filter on titles and channels, or nil.")
 
@@ -90,9 +99,7 @@
 
 (defun yt-history--played (id)
   "Return when the video ID was played, in seconds since the epoch."
-  (or (cdr (seq-find (lambda (item) (equal (yt-video-id (car item)) id))
-                     yt-history--items))
-      0))
+  (gethash id yt-history--played-at 0))
 
 (defun yt-history--sort-played (a b)
   "Return non-nil if entry A was played after entry B."
@@ -114,9 +121,12 @@
 (defun yt-history--print ()
   "Read the played videos again and print them, keeping point."
   (setq yt-history--items (yt-cache-history yt-history-limit)
-        yt-history--table (make-hash-table :test #'equal))
+        yt-history--table (make-hash-table :test #'equal)
+        yt-history--played-at (make-hash-table :test #'equal)
+        yt-history--stale nil)
   (dolist (item yt-history--items)
-    (puthash (yt-video-id (car item)) (car item) yt-history--table))
+    (puthash (yt-video-id (car item)) (car item) yt-history--table)
+    (puthash (yt-video-id (car item)) (cdr item) yt-history--played-at))
   (tabulated-list-print t)
   (unless yt-history--items
     (let ((inhibit-read-only t))
@@ -126,11 +136,33 @@
   (force-mode-line-update))
 
 (defun yt-history--refresh (&rest _)
-  "Print the history buffer again, if there is one."
+  "Print the history buffer again shortly, once for a burst of changes.
+A video starting or ending changes the history several times."
+  (unless (timerp yt-history--refresh-timer)
+    (setq yt-history--refresh-timer
+          (run-with-timer 0.2 nil #'yt-history--refresh-now))))
+
+(defun yt-history--refresh-now ()
+  "Print the history buffer again if it is shown, else mark it stale."
+  (setq yt-history--refresh-timer nil)
   (when-let* ((buffer (get-buffer yt-history-buffer)))
     (with-current-buffer buffer
       (when (derived-mode-p 'yt-history-mode)
-        (yt-history--print)))))
+        (if (get-buffer-window buffer t)
+            (yt-history--print)
+          (setq yt-history--stale t))))))
+
+(defun yt-history--print-now ()
+  "Print the history buffer now, for a change made from it."
+  (when (timerp yt-history--refresh-timer)
+    (cancel-timer yt-history--refresh-timer)
+    (setq yt-history--refresh-timer nil))
+  (yt-history--print))
+
+(defun yt-history--shown (_window)
+  "Print the history again when it is shown after it changed unseen."
+  (when yt-history--stale
+    (yt-history--print)))
 
 (defun yt-history--video-at-point ()
   "Return the video at point, or nil."
@@ -156,6 +188,7 @@ Interactively, the videos in the region, or the video at point.
 Their watched marks and resume positions stay."
   (interactive (list (yt-history--ids-in-region-or-at-point)) yt-history-mode)
   (yt-cache-remove-history ids)
+  (yt-history--print-now)
   (message "Removed %d %s from the history" (length ids)
            (if (cdr ids) "videos" "video")))
 
@@ -166,6 +199,7 @@ forgets them too."
   (interactive nil yt-history-mode)
   (when (yes-or-no-p "Clear the list of played videos? ")
     (yt-cache-clear-history)
+    (yt-history--print-now)
     (message "Cleared the history")))
 
 (defun yt-history-filter (query)
@@ -207,7 +241,7 @@ the feed work here too.
   (setq-local revert-buffer-function (lambda (&rest _) (yt-history--print)))
   (add-hook 'yt-history-changed-hook #'yt-history--refresh)
   (add-hook 'yt-watched-changed-functions #'yt-history--refresh)
-  (add-hook 'yt-player-playlist-changed-hook #'yt-history--refresh)
+  (add-hook 'window-buffer-change-functions #'yt-history--shown nil t)
   (tabulated-list-init-header))
 
 ;;;###autoload

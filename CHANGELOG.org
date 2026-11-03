@@ -2,6 +2,10 @@
 
 * Unreleased
 ** After M7
+- The history's Progress column shows where you stopped as soon as a
+  video ends (it showed the previous position until the next change).
+  The history buffer is printed once per burst of changes, and only when
+  it is shown, instead of three to five times per video start or end.
 - mpv's control connection recovers better: yt reconnects however often
   the connection drops, as long as it lasted a while each time; when it
   cannot reconnect, mpv keeps playing (yt used to kill it) and the next

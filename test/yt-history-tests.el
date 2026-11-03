@@ -25,11 +25,14 @@
            (yt-history-changed-hook nil)
            (yt-player-file-started-functions nil)
            (yt-player-youtube-history nil)
-           (yt-player--youtube-history-sent (make-hash-table :test #'equal)))
+           (yt-player--youtube-history-sent (make-hash-table :test #'equal))
+           (yt-history--refresh-timer nil))
        (let ((yt--now-function (lambda () now)))
          (ignore now)
          (unwind-protect
              (save-window-excursion ,@body)
+           (when (timerp yt-history--refresh-timer)
+             (cancel-timer yt-history--refresh-timer))
            (when-let* ((buffer (get-buffer yt-history-buffer)))
              (kill-buffer buffer)))))))
 
@@ -137,9 +140,10 @@
       (forward-line 2)
       (should (equal (yt-video-id (yt-video-at-point)) "historyvid2"))
       (should (eq (keymap-lookup yt-history-mode-map "RET") #'yt-play))
-      ;; A new play shows at once.
+      ;; A new play shows shortly.
       (yt-cache-add-history (yt-history-test--video "historyvid4"))
-      (should (equal (car (yt-feed--printed-ids)) "historyvid4"))
+      (yt-test-wait-until (lambda () (equal (car (yt-feed--printed-ids)) "historyvid4"))
+                          "new play shown")
       (yt-history-filter "vid2")
       (should (equal (yt-feed--printed-ids) '("historyvid2")))
       (yt-history-filter "")
@@ -155,6 +159,40 @@
       (should-not (yt-feed--printed-ids))
       (should (string-match-p "No videos played yet" (buffer-string)))
       (should (yt-video-watched (yt-cache-get "historyvid3"))))))
+
+(ert-deftest yt-history-refresh-is-batched-and-lazy ()
+  "A burst of changes prints once; a hidden history prints when shown.
+A new resume position shows in the Progress column."
+  (yt-history-test--with _ytdlp
+    (yt-cache-add-history (yt-history-test--video "historyvid1" :duration 600))
+    (let ((prints 0))
+      (with-current-buffer (yt-history)
+        (advice-add 'yt-history--print :after (lambda (&rest _) (cl-incf prints))
+                    '((name . yt-history-test-count)))
+        (unwind-protect
+            (progn
+              ;; Starting, then stopping a video: four changes.
+              (yt-cache-add-history (yt-history-test--video "historyvid2"))
+              (yt-mark-watched (yt-cache-get "historyvid2"))
+              (yt-cache-set-position "historyvid1" 125)
+              (yt-mark-watched (yt-cache-get "historyvid2") nil)
+              (yt-test-wait-until (lambda () (> prints 0)) "reprint")
+              (yt-test-sleep 0.3)
+              (should (= prints 1))
+              (should (string-match-p "Title historyvid1 +[^ ]+ +2:05/10:00"
+                                      (buffer-string)))
+              ;; Not shown: only marked stale, printed once shown again.
+              (switch-to-buffer (get-buffer-create "*yt-history-test-other*"))
+              (yt-cache-set-position "historyvid1" 130)
+              (yt-test-wait-until (lambda () (buffer-local-value 'yt-history--stale
+                                                                 (get-buffer yt-history-buffer)))
+                                  "stale")
+              (should (= prints 1))
+              (yt-history)
+              (should (= prints 2))
+              (should (string-match-p "2:10/10:00" (buffer-string))))
+          (advice-remove 'yt-history--print 'yt-history-test-count)
+          (kill-buffer "*yt-history-test-other*"))))))
 
 (provide 'yt-history-tests)
 ;;; yt-history-tests.el ends here
