@@ -1,6 +1,12 @@
 #+title: yt changelog
 
 * Unreleased
+- curl ignores =~/.curlrc= (=--disable= first), so options there such as
+  =--verbose=, which would print the request's cookies, cannot reach a
+  message or a log; curl's error messages leave out lines about cookies
+  or credentials.  Redirects must stay on https.  A SponsorBlock answer
+  that is not JSON is tried again instead of meaning "no segments" for
+  the session.
 - Many yt-dlp or curl runs ending together no longer overflow
   =max-lisp-eval-depth= (seen with 150 at once), and a long queue of jobs
   that finish at once no longer nests one call per job.

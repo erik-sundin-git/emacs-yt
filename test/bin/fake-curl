@@ -1,7 +1,8 @@
 #!/bin/sh
 # Fake curl for the yt tests.
 #
-# Appends its arguments, on one line, to $FAKE_CURL_DIR/calls.
+# Fails unless its first argument is --disable.  Appends its arguments,
+# on one line, to $FAKE_CURL_DIR/calls.
 #
 # Without --output, it stands in for an API request (YouTube's, with
 # --config FILE, or SponsorBlock's).  For the Nth such call (NN = 01,
@@ -22,6 +23,12 @@
 
 set -u
 dir=${FAKE_CURL_DIR:?FAKE_CURL_DIR is not set}
+# yt must always disable ~/.curlrc, which curl reads unless --disable
+# comes first.
+if [ "${1:-}" != --disable ]; then
+    echo "fake-curl: --disable is not the first argument" >&2
+    exit 2
+fi
 echo "$*" >> "$dir/calls"
 output= config= prev=
 for arg in "$@"; do

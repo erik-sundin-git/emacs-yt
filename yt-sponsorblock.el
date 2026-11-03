@@ -134,36 +134,34 @@ session; a failed fetch is tried again next time."
       (puthash id (append (gethash id yt-sponsorblock--waiting) (and callback (list callback)))
                yt-sponsorblock--waiting)
       (when (and first
-                 (not (yt-process-run
-                       yt-curl-program
-                       (list "--silent" "--show-error" "--proto" "=https" "--max-time" "10"
-                             "--write-out" "\n%{http_code}" "--" (yt-sponsorblock--url id))
-                       :parse nil :key (cons 'yt-sponsorblock id) :timeout 15
-                       :on-success
-                       (lambda (output _info)
-                         (yt-sponsorblock--done id (yt-sponsorblock--response id output)))
+                 (not (yt-process-curl
+                       (yt-sponsorblock--url id)
+                       :key (cons 'yt-sponsorblock id) :max-time 10
+                       :on-response
+                       (lambda (response)
+                         (yt-sponsorblock--done id (yt-sponsorblock--response id response)))
                        :on-error
                        (lambda (err)
-                         (yt-process-log "SponsorBlock: %s"
-                                         (string-trim (or (plist-get err :stderr)
-                                                          (format "%s" (plist-get err :type)))))
+                         (yt-process-log "SponsorBlock: %s" (plist-get err :message))
                          (yt-sponsorblock--done id nil)))))
         ;; Busy: no callback will come.  Answer from a timer, as always.
         (yt-process-deliver #'yt-sponsorblock--done id nil))))))
 
-(defun yt-sponsorblock--response (id output)
-  "Return the segments of ID in curl's OUTPUT, `none', or nil on failure."
-  (if (not (string-match "\n\\([0-9]\\{3\\}\\)\\'" output))
-      nil
-    (let ((status (string-to-number (match-string 1 output)))
-          (body (substring output 0 (match-beginning 0))))
-      (pcase status
-        (404 'none)                     ; No segments for this hash prefix.
-        (200 (or (yt-sponsorblock--parse
-                  id (condition-case nil (yt-process-parse-json body) (json-error nil)))
-                 'none))
-        (_ (yt-process-log "SponsorBlock: HTTP %d" status)
-           nil)))))
+(defun yt-sponsorblock--response (id response)
+  "Return the segments of ID in RESPONSE, `none', or nil on failure.
+RESPONSE is (STATUS . BODY).  A body that is not JSON is a failure,
+tried again next time, not \"no segments\"."
+  (pcase-let ((`(,status . ,body) response))
+    (pcase status
+      (404 'none)                       ; No segments for this hash prefix.
+      (200 (let ((json (condition-case nil
+                           (yt-process-parse-json body)
+                         (json-error (yt-process-log "SponsorBlock: answer is not JSON")
+                                     'invalid))))
+             (and (not (eq json 'invalid))
+                  (or (yt-sponsorblock--parse id json) 'none))))
+      (_ (yt-process-log "SponsorBlock: HTTP %d" status)
+         nil))))
 
 (defun yt-sponsorblock-segments (id)
   "Return the fetched segments of the video ID, or nil."

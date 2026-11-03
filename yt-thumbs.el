@@ -105,13 +105,10 @@ are scaled up.  A change shows in feed buffers after \\`t i' twice."
                          (unless cancelled
                            (puthash id (yt--now) yt-thumbs--failed)))
                      (funcall done)))))
-    (unless (yt-process-run
-             yt-curl-program
-             (list "--silent" "--fail" "--proto" "=https" "--max-time" "20"
-                   "--output" part "--" (yt-thumbs-url id))
-             :parse nil :key (cons 'yt-thumbs id) :timeout 30
-             :on-success (lambda (_output _info)
-                           (funcall finish (file-exists-p part)))
+    (unless (yt-process-curl
+             (yt-thumbs-url id) :output part :key (cons 'yt-thumbs id)
+             :on-response (lambda (_response)
+                            (funcall finish (file-exists-p part)))
              :on-error (lambda (err)
                          (when (eq (plist-get err :type) 'missing)
                            (unless yt-thumbs--curl-missing

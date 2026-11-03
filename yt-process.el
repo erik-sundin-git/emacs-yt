@@ -35,6 +35,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'seq)
 (require 'yt)
 
 (defvar yt-process-kill-grace 5.0
@@ -362,6 +363,68 @@ STDOUT and STDERR are the collected output."
       (list 'ok nil base))
      (t
       (list 'ok stdout base)))))
+
+;;;; curl
+
+(defun yt-process-scrub (text)
+  "Return TEXT without the lines that could show cookies or credentials.
+The other lines are joined with \"; \"."
+  (string-join
+   (seq-remove (lambda (line)
+                 (string-match-p "[Cc]ookie\\|[Aa]uthorization\\|SAPISID\\|[Pp]assword" line))
+               (split-string text "\n" t "[[:space:]]+"))
+   "; "))
+
+(cl-defun yt-process-curl (url &key config output key (max-time 20)
+                               on-response on-error)
+  "Fetch URL with `yt-curl-program', asynchronously.
+Call ON-RESPONSE with (STATUS . BODY), the HTTP status and the body,
+or ON-ERROR with an error plist from `yt-process-run' whose :message
+is fit to show.  CONFIG is a curl config file to read the URL and
+any headers or cookies from, instead of URL, so that nothing secret
+is on the command line.  With OUTPUT, the body goes to that file
+instead, and an HTTP error is an error.  KEY is as for
+`yt-process-run'; MAX-TIME is in seconds.
+
+curl always gets --disable first, so that ~/.curlrc cannot add
+options such as --verbose (which would print the request headers),
+only https, also for redirects, and `--' before URL.  Return as
+`yt-process-run' does."
+  (yt-process-run
+   yt-curl-program
+   (append (list "--disable" "--silent" "--show-error"
+                 "--proto" "=https" "--proto-redir" "=https"
+                 "--max-time" (number-to-string max-time))
+           ;; A download fails on an HTTP error; a request reports its status.
+           (if output
+               (list "--fail" "--output" output)
+             (list "--write-out" "\n%{http_code}"))
+           (if config (list "--config" config) (list "--" url)))
+   :parse nil :key key :timeout (+ max-time 10)
+   :on-success
+   (lambda (stdout _info)
+     (when on-response
+       (funcall on-response
+                (cond (output (cons 200 ""))
+                      ((string-match "\n?\\([0-9]\\{3\\}\\)\\'" stdout)
+                       (cons (string-to-number (match-string 1 stdout))
+                             (substring stdout 0 (match-beginning 0))))
+                      (t (cons 0 stdout))))))
+   :on-error
+   (lambda (err)
+     (when on-error
+       (funcall on-error
+                (append
+                 (list :message
+                       (if (eq (plist-get err :type) 'missing)
+                           (format "%s not found: install curl or set `yt-curl-program'"
+                                   yt-curl-program)
+                         (format "curl failed: %s"
+                                 (string-trim
+                                  (yt-process-scrub
+                                   (or (plist-get err :stderr)
+                                       (format "%s" (plist-get err :type))))))))
+                 err))))))
 
 (provide 'yt-process)
 ;;; yt-process.el ends here

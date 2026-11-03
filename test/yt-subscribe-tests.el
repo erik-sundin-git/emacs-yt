@@ -283,5 +283,20 @@ With SUBSCRIBED `yes' or `no', the response confirms that state."
                      (list (list 'sub yt-subscribe-test--id "https://x/c" "Channel 2")
                            (list 'unsub yt-subscribe-test--id "https://x/c" "Channel 2" t)))))))
 
+(ert-deftest yt-subscribe-curl-failure-shows-no-secrets ()
+  "A failing curl is reported without lines that could hold cookies."
+  (yt-subscribe-test--with (_export curl)
+    (yt-test-write (expand-file-name "01.exit" curl) "35")
+    (yt-test-write (expand-file-name "01.err" curl)
+                   "> Cookie: SAPISID=FAKE-sapisid\ncurl: (35) TLS connect error\n")
+    (let (result)
+      (yt-subscribe--request 'subscribe yt-subscribe-test--id
+                             :on-success (lambda () (setq result 'ok))
+                             :on-error (lambda (message) (setq result message)))
+      (yt-test-wait-until (lambda () result) "curl failure")
+      (should (string-match-p "curl failed: .*TLS connect error" result))
+      (should-not (string-match-p "Cookie\\|SAPISID\\|FAKE" result)))
+    (should-not (directory-files (yt-ensure-runtime-directory) nil "\\`\\(curl\\|cookies\\)-"))))
+
 (provide 'yt-subscribe-tests)
 ;;; yt-subscribe-tests.el ends here

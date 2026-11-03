@@ -134,18 +134,15 @@ created with mode 0600 in the runtime directory."
       (insert "data-binary = " (yt-subscribe--quote body) "\n"))
     file))
 
-(defun yt-subscribe--parse-response (output)
-  "Return (STATUS . JSON) for the OUTPUT of curl.
-STATUS is the HTTP status, which curl prints after the body, and
-JSON the body as a plist, with false as `:false', or nil."
-  (if (string-match "\n\\([0-9]\\{3\\}\\)\\'" output)
-      (cons (string-to-number (match-string 1 output))
-            (condition-case nil
-                (json-parse-string (substring output 0 (match-beginning 0))
-                                   :object-type 'plist :array-type 'list
-                                   :null-object nil :false-object :false)
-              (json-error nil)))
-    (cons 0 nil)))
+(defun yt-subscribe--parse-response (response)
+  "Return (STATUS . JSON) for RESPONSE, (STATUS . BODY) from curl.
+JSON is the body as a plist, with false as `:false', or nil."
+  (cons (car response)
+        (condition-case nil
+            (json-parse-string (cdr response)
+                               :object-type 'plist :array-type 'list
+                               :null-object nil :false-object :false)
+          (json-error nil))))
 
 (defun yt-subscribe--confirmed (json)
   "Return the subscription state YouTube reports in JSON.
@@ -196,34 +193,25 @@ for internal use."
             (progn (funcall cleanup)
                    (yt-auth--set-state 'expired)
                    (yt-process-deliver on-error (yt-ytdlp-error-message 'expired)))
-          (unless (yt-process-run
-                   yt-curl-program
-                   (list "--silent" "--show-error" "--proto" "=https" "--max-time" "20"
-                         "--write-out" "\n%{http_code}" "--config" config)
-                   :parse nil :key (list 'yt-subscribe channel-id) :timeout 30
-                   :on-success
-                   (lambda (output _info)
+          (unless (yt-process-curl
+                   nil :config config :key (list 'yt-subscribe channel-id)
+                   :on-response
+                   (lambda (response)
                      (funcall cleanup)
-                     (yt-subscribe--handle-response action output retried retry
+                     (yt-subscribe--handle-response action response retried retry
                                                     on-success on-error))
                    :on-error
                    (lambda (err)
                      (funcall cleanup)
-                     (funcall on-error
-                              (if (eq (plist-get err :type) 'missing)
-                                  (format "%s not found: install curl or set `yt-curl-program'"
-                                          yt-curl-program)
-                                (format "curl failed: %s"
-                                        (string-trim (or (plist-get err :stderr)
-                                                         (format "%s" (plist-get err :type)))))))))
+                     (funcall on-error (plist-get err :message))))
             (funcall cleanup))))))))
 
-(defun yt-subscribe--handle-response (action output retried retry on-success on-error)
-  "Handle the OUTPUT of curl for the request ACTION.
+(defun yt-subscribe--handle-response (action response retried retry on-success on-error)
+  "Handle curl's RESPONSE, (STATUS . BODY), to the request ACTION.
 RETRIED is non-nil if the request was already sent again, and RETRY
 sends it again.  ON-SUCCESS and ON-ERROR are as for
 `yt-subscribe--request'."
-  (pcase-let ((`(,status . ,json) (yt-subscribe--parse-response output)))
+  (pcase-let ((`(,status . ,json) (yt-subscribe--parse-response response)))
     (cond
      ((= status 200)
       (let ((confirmed (yt-subscribe--confirmed json)))

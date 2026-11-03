@@ -208,5 +208,14 @@ CURL is bound to the fake curl's directory."
                      text)))
           (kill-buffer))))))
 
+(ert-deftest yt-sponsorblock-garbled-answer-is-tried-again ()
+  "An answer that is not JSON is a failure, not \"no segments\"."
+  (yt-sponsorblock-test--with curl
+    (yt-sponsorblock-test--respond curl 1 200 "<html>maintenance</html>")
+    (should-not (yt-sponsorblock-test--fetch "fakevideo01"))
+    (yt-sponsorblock-test--respond curl 2 200 yt-sponsorblock-test--response)
+    (should (= (length (yt-sponsorblock-test--fetch "fakevideo01")) 3))
+    (should (= (yt-sponsorblock-test--count curl) 2))))
+
 (provide 'yt-sponsorblock-tests)
 ;;; yt-sponsorblock-tests.el ends here
