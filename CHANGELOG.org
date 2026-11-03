@@ -2,6 +2,8 @@
 
 * Unreleased
 ** After M7
+- A video whose stream expired is resolved again and put back in its
+  place in mpv's playlist; the retry used to empty the playlist.
 - Refreshes and downloads always finish: an error while showing a refresh
   (such as a locked database) ends it with a message instead of leaving
   it "already refreshing"; a failed save of rotated cookies no longer

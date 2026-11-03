@@ -438,9 +438,10 @@ once per entry."
   (when (nthcdr yt-mpv-log-size yt-mpv--log)
     (setcdr (nthcdr (1- yt-mpv-log-size) yt-mpv--log) nil)))
 
-(defun yt-mpv--retry (entry)
-  "Resolve the video of ENTRY again and play it from where it failed.
-Stream URLs expire after some hours, which breaks queued entries."
+(defun yt-mpv--retry (id entry)
+  "Resolve the video of ENTRY, playlist entry ID, again and play it.
+It plays from where it failed, in its place in the playlist.  Stream
+URLs expire after some hours, which breaks queued entries."
   (let ((video (yt-mpv--entry-video entry))
         (pos (yt-mpv--entry-pos entry))
         (instance yt-mpv--instance))
@@ -452,7 +453,7 @@ Stream URLs expire after some hours, which breaks queued entries."
         streams
         (lambda ()
           (when (yt-mpv--current-p instance)
-            (yt-mpv--load video streams "replace" (and pos (floor pos)) t)))))
+            (yt-mpv--reload-in-place id video streams (and pos (floor pos)) t)))))
      #'yt-player--failed
      :key '(yt-mpv . retry))))
 
@@ -475,7 +476,7 @@ Stream URLs expire after some hours, which breaks queued entries."
       (if (and entry (yt-mpv--entry-video entry) (not (yt-mpv--entry-retried entry)))
           (progn (setf (yt-mpv--entry-retried entry) t)
                  (yt-mpv--finalize id reason)
-                 (yt-mpv--retry entry))
+                 (yt-mpv--retry id entry))
         (yt-mpv--finalize id reason)
         (message "%s" (substitute-command-keys
                        (format "mpv could not play the video (%s); \\[yt-player-show-log] shows details"
@@ -539,21 +540,23 @@ Stream URLs expire after some hours, which breaks queued entries."
 
 ;;;; Backend
 
-(defun yt-mpv-loadfile-command (streams flags &optional start title)
+(defun yt-mpv-loadfile-command (streams flags &optional start title index)
   "Return the loadfile command that plays STREAMS with FLAGS.
-FLAGS is \"replace\" or \"append-play\".  START is in seconds.
-TITLE, defaulting to the streams' title, is shown by mpv.  mpv
-needs every option value as a string."
-  (list :name "loadfile" :url (plist-get streams :video) :flags flags
+FLAGS is \"replace\", \"append-play\" or \"insert-at\", which puts
+the file at INDEX of the playlist.  START is in seconds.  TITLE,
+defaulting to the streams' title, is shown by mpv.  mpv needs every
+option value as a string."
+  (list :name "loadfile" :url (plist-get streams :video) :flags flags :index index
         :options (list :audio-file (plist-get streams :audio)
                        :force-media-title (or title (plist-get streams :title))
                        :user-agent (cdr (assoc-string "User-Agent"
                                                       (plist-get streams :headers) t))
                        :start (and start (> start 0) (format "%d" start)))))
 
-(defun yt-mpv--load (video streams flags &optional start retried)
+(defun yt-mpv--load (video streams flags &optional start retried index)
   "Load VIDEO with its STREAMS into mpv with FLAGS, from START.
-RETRIED non-nil means this is a second try after an error."
+RETRIED non-nil means this is a second try after an error.  INDEX is
+the playlist index for the flags \"insert-at\"."
   (yt-mpv--ensure)
   (unless yt-player-mode
     (yt-player-mode 1))
@@ -562,7 +565,7 @@ RETRIED non-nil means this is a second try after an error."
   (let ((instance yt-mpv--instance)
         (title (yt-player--title video)))
     (yt-mpv-send
-     (yt-mpv-loadfile-command streams flags start title)
+     (yt-mpv-loadfile-command streams flags start title index)
      (lambda (data error)
        (when (yt-mpv--current-p instance)
          (if error
@@ -575,8 +578,26 @@ RETRIED non-nil means this is a second try after an error."
                ;; The file may have started before this reply arrived.
                (when (eql id yt-mpv--current)
                  (yt-mpv--mark-started entry))))))))
-    (message (if (equal flags "replace") "Playing “%s” in mpv" "Queued “%s” in mpv")
+    (message (if (equal flags "append-play") "Queued “%s” in mpv" "Playing “%s” in mpv")
              title)))
+
+(defun yt-mpv--reload-in-place (id video streams &optional start retried)
+  "Put VIDEO with STREAMS in place of playlist entry ID and play it.
+Start at START seconds.  The rest of the playlist stays as it is:
+`replace' would empty it.  RETRIED is as for `yt-mpv--load'."
+  (let ((instance yt-mpv--instance))
+    (yt-mpv-send
+     '("get_property" "playlist")
+     (lambda (data error)
+       (when (yt-mpv--current-p instance)
+         (let ((index (and (not error)
+                           (cl-position id data :key (lambda (item) (plist-get item :id))))))
+           (if (not index)
+               ;; The entry is gone: play the video next instead.
+               (yt-mpv--load video streams "insert-next-play" start retried)
+             (yt-mpv-send (list "playlist-remove" index))
+             (yt-mpv--load video streams "insert-at" start retried index)
+             (yt-mpv-send (list "playlist-play-index" index) #'yt-mpv--report))))))))
 
 (cl-defmethod yt-player-backend-check ((_backend (eql 'mpv)))
   "Signal a `user-error' if mpv is not installed."
