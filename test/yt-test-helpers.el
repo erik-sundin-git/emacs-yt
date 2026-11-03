@@ -359,7 +359,7 @@ See `yt-test--end-scenario' for what is checked at the end."
             (yt-history-changed-hook nil)
             (yt-subscriptions-changed-functions nil)
             (yt-thumbs-changed-functions nil)
-            (yt-player-file-started-functions nil)
+            (yt-player-started-functions nil)
             (yt-player-resolve-failed-functions nil)
             (yt-player-playlist-changed-hook nil)
             (kill-emacs-hook kill-emacs-hook)

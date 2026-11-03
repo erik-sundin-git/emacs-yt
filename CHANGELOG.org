@@ -1,6 +1,11 @@
 #+title: yt changelog
 
 * Unreleased
+- mpv's playlist is called the queue, so that it is not mistaken for a
+  YouTube playlist: =C-c y l= shows =*yt-queue*= (=yt-player-queue=, in
+  =yt-queue-mode=), and =C-c y z= is =yt-player-shuffle-queue=.  The old
+  names still work, as obsolete aliases.  =yt-player-file-started-functions=
+  is now =yt-player-started-functions=.
 - Keys that are the same everywhere:
   - =j= gives every key of =C-c y= in all yt buffers (=j c= channels,
     =j h= history), and =P= the player keys, now also in the channels and

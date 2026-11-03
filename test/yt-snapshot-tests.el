@@ -110,8 +110,8 @@ YTDLP is bound to the fake yt-dlp's directory."
   "The player's queue."
   (yt-snapshot-test--with _ytdlp
     (with-temp-buffer
-      (yt-playlist-mode)
-      (setq yt-playlist--items
+      (yt-queue-mode)
+      (setq yt-queue--items
             (list (list :index 0 :id 1 :current t :title "Title queued01"
                         :video (yt-video--make :id "queued01aaa" :channel "Fake Channel One"
                                                :duration 754))

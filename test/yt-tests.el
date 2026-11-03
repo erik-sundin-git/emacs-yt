@@ -126,7 +126,7 @@
   (should (eq (indirect-function 'yt-subscriptions) (indirect-function 'yt)))
   ;; The labelled player keys still reach their commands through `yt-map'.
   (should (eq (keymap-lookup yt-map "SPC") #'yt-player-pause))
-  (should (eq (keymap-lookup yt-map "l") #'yt-player-playlist))
+  (should (eq (keymap-lookup yt-map "l") #'yt-player-queue))
   ;; Every binding of both maps has a label for which-key.
   (dolist (map (list yt-map yt-player-map))
     (map-keymap (lambda (_key binding)
@@ -185,7 +185,7 @@ comment autoloads whatever comes next instead."
                                  yt-subscribe yt-url yt-doctor))
     (require feature))
   (let ((maps (list yt-map yt-feed-mode-map yt-channels-mode-map yt-playlists-mode-map
-                    yt-history-mode-map yt-info-mode-map yt-playlist-mode-map
+                    yt-history-mode-map yt-info-mode-map yt-queue-mode-map
                     yt-list-mode-map yt-video-actions-map yt-player-map yt-feed-toggle-map))
         unbound)
     (mapatoms
@@ -194,6 +194,7 @@ comment autoloads whatever comes next instead."
                   (not (string-search "--" (symbol-name symbol)))
                   (commandp symbol)
                   (not (memq symbol yt-test-mx-only-commands))
+                  (not (get symbol 'byte-obsolete-info))
                   (let ((file (symbol-file symbol 'defun)))
                     (and file (string-prefix-p "yt" (file-name-nondirectory file))))
                   ;; One map at a time: in a list, one map's key hides another's.
@@ -205,7 +206,7 @@ comment autoloads whatever comes next instead."
   "The same keys do the same in every yt list."
   (dolist (feature '(yt-channels yt-playlists yt-history yt-info)) (require feature))
   (dolist (map (list yt-feed-mode-map yt-channels-mode-map yt-playlists-mode-map
-                     yt-history-mode-map yt-playlist-mode-map yt-info-mode-map))
+                     yt-history-mode-map yt-queue-mode-map yt-info-mode-map))
     (should (eq (keymap-lookup map "j c") #'yt-channels))
     (should (eq (keymap-lookup map "P SPC") #'yt-player-pause)))
   (dolist (map (list yt-channels-mode-map yt-playlists-mode-map yt-history-mode-map))
@@ -214,7 +215,7 @@ comment autoloads whatever comes next instead."
     (should (eq (keymap-lookup map "s") #'yt-list-filter-with-s)))
   (should (eq (keymap-lookup yt-feed-mode-map "s") #'yt-list-filter-with-s))
   (should (eq (keymap-lookup yt-playlists-mode-map "o") #'yt-playlists-open))
-  (should (eq (keymap-lookup yt-playlist-mode-map "z") #'yt-player-shuffle-playlist))
+  (should (eq (keymap-lookup yt-queue-mode-map "z") #'yt-player-shuffle-queue))
   (should (eq (keymap-lookup yt-player-repeat-map "=") #'yt-player-normal-speed)))
 
 (provide 'yt-tests)

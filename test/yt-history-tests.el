@@ -23,7 +23,7 @@
      (yt-test-install-cookies)
      (let ((now 1793500000)
            (yt-history-changed-hook nil)
-           (yt-player-file-started-functions nil)
+           (yt-player-started-functions nil)
            (yt-player-youtube-history nil)
            (yt-player--youtube-history-sent (make-hash-table :test #'equal))
            (yt-history--refresh-timer nil))
@@ -86,7 +86,7 @@
   (yt-history-test--with ytdlp
     (let ((video (yt-history-test--video "historyvid1"))
           started)
-      (add-hook 'yt-player-file-started-functions (lambda (v) (push v started)))
+      (add-hook 'yt-player-started-functions (lambda (v) (push v started)))
       (yt-player-started video)
       (should (equal started (list video)))
       (should (equal (yt-history-test--ids) '("historyvid1")))

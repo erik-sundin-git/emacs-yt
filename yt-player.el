@@ -99,7 +99,7 @@ The playlist is a list of plists with :index (from 0), :id, :title,
 (defvar yt-player-playlist-changed-hook nil
   "Hook run by backends when their playlist may have changed.")
 
-(defvar yt-player-file-started-functions nil
+(defvar yt-player-started-functions nil
   "Abnormal hook run with the `yt-video' a backend started to play.")
 
 (defcustom yt-player-youtube-history nil
@@ -351,13 +351,13 @@ Problems go to the player log, \[yt-player-show-log]."
   "Note that a backend started to play VIDEO.
 Add it to yt's history and, if `yt-player-youtube-history' is
 non-nil, to the YouTube history, then run
-`yt-player-file-started-functions'."
+`yt-player-started-functions'."
   (when (yt-video-id video)
     (yt-player--trace video "started")
     (remhash (yt-video-id video) yt-player--asked)
     (yt-cache-add-history video))
   (yt-player--add-to-youtube-history video)
-  (run-hook-with-args 'yt-player-file-started-functions video))
+  (run-hook-with-args 'yt-player-started-functions video))
 
 (defun yt-player--fill-video (video streams)
   "Fill in the title and duration of VIDEO from its resolved STREAMS."
@@ -583,7 +583,7 @@ queued or playing but not started yet to t."
                         (gethash (yt-video-id (cdr item))
                                  (yt-player--shuffle-pending shuffle)))
                       yt-player--queue))
-    (remove-hook 'yt-player-file-started-functions #'yt-player--shuffle-advance)
+    (remove-hook 'yt-player-started-functions #'yt-player--shuffle-advance)
     (remove-hook 'yt-player-resolve-failed-functions #'yt-player--shuffle-advance)))
 
 (defun yt-player--shuffle-top-up ()
@@ -640,18 +640,18 @@ out.  Playing another video ends the sequence."
       ;; queued only once it started.
       (puthash (yt-video-id (car videos)) t (yt-player--shuffle-pending shuffle))
       (setq yt-player--shuffle shuffle)
-      (add-hook 'yt-player-file-started-functions #'yt-player--shuffle-advance)
+      (add-hook 'yt-player-started-functions #'yt-player--shuffle-advance)
       (add-hook 'yt-player-resolve-failed-functions #'yt-player--shuffle-advance)
       (yt-player--start 'mpv (car videos) (yt-player--resume-position (car videos)))
       (message "%s %d videos%s" (if shuffle "Shuffling" "Playing")
                (length videos) (if name (format " of “%s”" name) "")))))
 
 ;;;###autoload
-(defun yt-player-shuffle-playlist ()
-  "Shuffle the player's playlist."
+(defun yt-player-shuffle-queue ()
+  "Shuffle the player's queue."
   (interactive)
   (yt-player--command 'shuffle)
-  (message "Shuffled the playlist"))
+  (message "Shuffled the queue"))
 
 ;;;; Player commands
 
@@ -914,16 +914,21 @@ Without a region, move to the next row."
   "y" #'yt-copy-video-url
   "Y" #'yt-copy-video-title-and-url)
 
-;;;; Playlist
+;;;; Queue: the player's playlist
 
-(defconst yt-player-playlist-buffer "*yt-playlist*"
-  "Name of the playlist buffer.")
+;; It was called the playlist, which YouTube's playlists made unclear.
+(define-obsolete-variable-alias 'yt-playlist-mode-map 'yt-queue-mode-map "0.3.0")
+(define-obsolete-variable-alias 'yt-playlist-mode-hook 'yt-queue-mode-hook "0.3.0")
+(define-obsolete-variable-alias 'yt-player-playlist-buffer 'yt-player-queue-buffer "0.3.0")
 
-(defvar-local yt-playlist--items nil
-  "The playlist shown, as from `yt-player-backend-playlist'.")
+(defconst yt-player-queue-buffer "*yt-queue*"
+  "Name of the buffer of the player's queue, mpv's playlist.")
 
-(defun yt-playlist--entries ()
-  "Return the tabulated-list entries of the playlist."
+(defvar-local yt-queue--items nil
+  "The queue shown, as from `yt-player-backend-playlist'.")
+
+(defun yt-queue--entries ()
+  "Return the tabulated-list entries of the queue."
   (mapcar (lambda (item)
             (let ((video (plist-get item :video)))
               (list (plist-get item :id)
@@ -932,25 +937,25 @@ Without a region, move to the next row."
                             (or (and video (yt-video-channel video)) "")
                             (or (plist-get item :title) "")
                             (yt-video-format-duration (and video (yt-video-duration video)))))))
-          yt-playlist--items))
+          yt-queue--items))
 
-(defun yt-playlist--item ()
-  "Return the playlist item at point, or signal a `user-error'."
+(defun yt-queue--item ()
+  "Return the queue item at point, or signal a `user-error'."
   (let ((id (tabulated-list-get-id)))
     (or (and id (seq-find (lambda (item) (equal (plist-get item :id) id))
-                          yt-playlist--items))
+                          yt-queue--items))
         (user-error "No playlist entry here"))))
 
-(defun yt-playlist--video-at-point ()
-  "Return the video of the playlist entry at point, or nil."
+(defun yt-queue--video-at-point ()
+  "Return the video of the queue entry at point, or nil."
   (when-let* ((id (tabulated-list-get-id)))
     (plist-get (seq-find (lambda (item) (equal (plist-get item :id) id))
-                         yt-playlist--items)
+                         yt-queue--items)
                :video)))
 
-(defun yt-playlist-refresh ()
-  "Show the player's playlist again."
-  (interactive nil yt-playlist-mode)
+(defun yt-queue-refresh ()
+  "Show the player's queue again."
+  (interactive nil yt-queue-mode)
   (unless yt-player--current-backend
     (user-error "Nothing is playing"))
   (let ((buffer (current-buffer)))
@@ -959,64 +964,73 @@ Without a region, move to the next row."
      (lambda (items)
        (when (buffer-live-p buffer)
          (with-current-buffer buffer
-           (setq yt-playlist--items items)
+           (setq yt-queue--items items)
            (tabulated-list-print t)))))))
 
-(defun yt-playlist--changed ()
-  "Refresh the playlist buffer, if there is one."
-  (when-let* ((buffer (get-buffer yt-player-playlist-buffer)))
+(defun yt-queue--changed ()
+  "Show the queue again, if its buffer exists."
+  (when-let* ((buffer (get-buffer yt-player-queue-buffer)))
     (with-current-buffer buffer
-      (when (and (derived-mode-p 'yt-playlist-mode) yt-player--current-backend)
-        (ignore-errors (yt-playlist-refresh))))))
+      (when (and (derived-mode-p 'yt-queue-mode) yt-player--current-backend)
+        (ignore-errors (yt-queue-refresh))))))
 
-(defun yt-playlist-play ()
+(defun yt-queue-play ()
   "Play the playlist entry at point."
-  (interactive nil yt-playlist-mode)
+  (interactive nil yt-queue-mode)
   (yt-player-backend-command yt-player--current-backend 'play-index
-                             (plist-get (yt-playlist--item) :index)))
+                             (plist-get (yt-queue--item) :index)))
 
-(defun yt-playlist-remove ()
+(defun yt-queue-remove ()
   "Remove the playlist entry at point."
-  (interactive nil yt-playlist-mode)
+  (interactive nil yt-queue-mode)
   (yt-player-backend-command yt-player--current-backend 'remove
-                             (plist-get (yt-playlist--item) :index))
-  (yt-playlist-refresh))
+                             (plist-get (yt-queue--item) :index))
+  (yt-queue-refresh))
 
-(defvar-keymap yt-playlist-mode-map
-  :doc "Keymap for `yt-playlist-mode'."
+(defvar-keymap yt-queue-mode-map
+  :doc "Keymap for `yt-queue-mode'."
   :parent (make-composed-keymap yt-video-actions-map tabulated-list-mode-map)
-  "RET" #'yt-playlist-play
-  "d" #'yt-playlist-remove
-  "z" #'yt-player-shuffle-playlist
+  "RET" #'yt-queue-play
+  "d" #'yt-queue-remove
+  "z" #'yt-player-shuffle-queue
   "j" yt-map
-  "g" #'yt-playlist-refresh)
+  "g" #'yt-queue-refresh)
 
-(define-derived-mode yt-playlist-mode tabulated-list-mode "yt-playlist"
-  "Major mode for the player's playlist.
-\{yt-playlist-mode-map}"
+(define-derived-mode yt-queue-mode tabulated-list-mode "yt-queue"
+  "Major mode for the player's queue: the videos waiting in mpv's playlist.
+\{yt-queue-mode-map}"
   :group 'yt-player
   :interactive nil
-  (setq tabulated-list-entries #'yt-playlist--entries)
-  (setq-local yt-video-at-point-function #'yt-playlist--video-at-point)
-  (setq-local revert-buffer-function (lambda (&rest _) (yt-playlist-refresh)))
-  (add-hook 'yt-player-playlist-changed-hook #'yt-playlist--changed)
+  (setq tabulated-list-entries #'yt-queue--entries)
+  (setq-local yt-video-at-point-function #'yt-queue--video-at-point)
+  (setq-local revert-buffer-function (lambda (&rest _) (yt-queue-refresh)))
+  (add-hook 'yt-player-playlist-changed-hook #'yt-queue--changed)
   (yt-list-fit-columns [(" " 1 nil) ("#" 3 nil :right-align t)
                         ("Channel" 20 nil) ("Title" 70 nil)
                         ("Dur" 8 nil :right-align t)]))
 
 ;;;###autoload
-(defun yt-player-playlist ()
-  "Show the player's playlist."
+(defun yt-player-queue ()
+  "Show the player's queue, the videos in mpv's playlist."
   (interactive)
   (unless yt-player--current-backend
     (user-error "Nothing is playing"))
-  (let ((buffer (get-buffer-create yt-player-playlist-buffer)))
+  (let ((buffer (get-buffer-create yt-player-queue-buffer)))
     (with-current-buffer buffer
-      (unless (derived-mode-p 'yt-playlist-mode)
-        (yt-playlist-mode))
-      (yt-playlist-refresh))
+      (unless (derived-mode-p 'yt-queue-mode)
+        (yt-queue-mode))
+      (yt-queue-refresh))
     (pop-to-buffer buffer)
     buffer))
+
+;;;; Old names
+
+(define-obsolete-function-alias 'yt-player-playlist #'yt-player-queue "0.3.0")
+(define-obsolete-function-alias 'yt-player-shuffle-playlist #'yt-player-shuffle-queue "0.3.0")
+(define-obsolete-function-alias 'yt-playlist-mode #'yt-queue-mode "0.3.0")
+(define-obsolete-function-alias 'yt-playlist-play #'yt-queue-play "0.3.0")
+(define-obsolete-function-alias 'yt-playlist-remove #'yt-queue-remove "0.3.0")
+(define-obsolete-function-alias 'yt-playlist-refresh #'yt-queue-refresh "0.3.0")
 
 (provide 'yt-player)
 ;;; yt-player.el ends here

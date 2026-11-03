@@ -7,7 +7,7 @@ fetches everything with yt-dlp.  It uses no OAuth and no API key.
 
 - =M-x yt= opens the subscription feed: the cached videos at once, then a
   refresh in the background.
-- =RET= plays in mpv, which Emacs controls (pause, seek, speed, playlist,
+- =RET= plays in mpv, which Emacs controls (pause, seek, speed, queue,
   now-playing in the mode line, resume where you stopped, skipping
   sponsored segments with SponsorBlock).  =v= streams to
   VLC instead.
@@ -96,10 +96,10 @@ YouTube accepts the session again.
 | =<left>= / =<right>= | seek 5 s (a prefix argument sets the seconds) |
 | =<down>= / =<up>=    | seek 60 s                              |
 | =[= / =]= / ===  | slower / faster / normal speed             |
-| =n= / =p=      | next / previous in the playlist              |
+| =n= / =p=      | next / previous in the queue                 |
 | =.= / =,=      | next / previous chapter                      |
-| =l=            | the playlist                                 |
-| =z=            | shuffle mpv's playlist                       |
+| =l=            | the queue: the videos in mpv's playlist      |
+| =z=            | shuffle the queue                            |
 | =U= / =K=      | undo the last SponsorBlock skip / skipping on or off |
 | =S= / =Q=      | stop / quit mpv                              |
 | =!=            | log of playback problems                     |
@@ -109,13 +109,13 @@ With which-key, =C-c y= shows a short label for each key.
 =M-x yt= and =M-x yt-subscriptions= also open the subscription feed.
 
 In the feed, channel uploads and search results (and, for the video keys,
-the info and playlist buffers):
+the info and queue buffers):
 
 | Key           | Command                                                  |
 |---------------+----------------------------------------------------------|
 | =RET=         | play (mpv if installed, else VLC); =C-u RET= from the start |
 | =v= / =m=     | play in VLC / mpv                                        |
-| =a=           | add to mpv's playlist (on the region too)                |
+| =a=           | add to the queue (on the region too)                     |
 | =i=           | details: description, chapters (play from there), tags  |
 | =o=           | the uploads of the video's channel                       |
 | =O=           | the playlists the video's channel made                   |
@@ -146,8 +146,8 @@ A channel's playlists, and the saved ones (=C-c y P=), open with =RET= or
 =o= in playlist order; =+= saves the playlist at point, =-= or =d= forgets
 it, =z= shuffles it, and =b= opens it in a browser.  In the history, =d=
 removes the video at point (or the region) and =D= clears the list.  In
-mpv's playlist (=C-c y l=), =RET= plays an entry, =d= removes it and =z=
-shuffles it.
+the queue (=C-c y l=, mpv's playlist), =RET= plays an entry, =d= removes it
+and =z= shuffles it.
 
 In the subscription feed, ● marks a video you have not watched and ◆ one
 that arrived since your last visit (when you last opened the feed, at
