@@ -26,9 +26,8 @@
 ;; URLs, which work anywhere; with `yt-url-handler-mode' on, following
 ;; one in org plays it in yt, from its time.
 ;;
-;; The "yt" link type only stores links: it is never written into a
-;; note, so notes do not depend on yt.  To use it, load it with org's
-;; links:
+;; No yt: links are written into notes, so notes do not depend on yt.
+;; To use it, load it with org's links:
 ;;
 ;;   (with-eval-after-load 'ol (require 'yt-org))
 

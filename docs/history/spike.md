@@ -1,5 +1,7 @@
 # M0 spike: findings
 
+> Historical: this document records a plan that is complete. The code, the README and docs/DEVELOPMENT.md are authoritative where they differ.
+
 These are checks of the plan's assumptions against the real tools, run on 2026-11-01 with the flake's pinned nixpkgs (`fa1373130d5a`, nixos-26.05): mpv 0.41.0, yt-dlp 2026.10.21, Emacs 30.2.
 
 ## mpv JSON IPC (`--idle=yes --vo=null --ao=null`, `av://lavfi:testsrc` input, no network)

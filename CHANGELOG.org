@@ -1,17 +1,21 @@
 #+title: yt changelog
 
 * Unreleased
+** Upgrading
+- The feed hides watched videos by default (=yt-feed-hide-watched= is now
+  t); =t w= shows them.
+- The cache is now schema version 5, with a =channel_prefs= table for
+  muted channels; yt backs the cache up before changing it.  A yt from
+  before the backups (0.3.0 and older) refuses a version 5 cache: after
+  rolling back that far, restore the newest =yt.sqlite.backup-…= over
+  =yt.sqlite=.
+** New
 - =yt-remote ACTION= runs a player command from outside Emacs (pause,
   seek, next, chapters, speed, audio only, …), for window manager keys,
   through =emacsclient= and =yt-player-remote=.  The Home Manager module
-  installs it.  Player commands run that way no longer leave their repeat
-  keys active in Emacs.
+  installs it; without Nix, copy =bin/yt-remote= onto =PATH=.
 - =programs.yt.mpris= adds mpv's MPRIS script, so media keys and status
   bars control yt's mpv; it is patched not to publish the stream URL.
-- The feed hides watched videos by default (=yt-feed-hide-watched= is now
-  t); =t w= shows them.
-- Fixed: after a refresh, a feed opened at the top jumped to its last
-  row.  Point on the column names, above the rows, now stays there.
 - Org links: with =(with-eval-after-load 'ol (require 'yt-org))=,
   =org-store-link= in a yt buffer stores a plain YouTube link to the
   video at point, "Title — Channel", from where it is if it is playing.
@@ -21,20 +25,13 @@
 - The mode line shows the chapter playing, the place in the queue
   (=[2/5]=), ♪ for audio only, LIVE for live streams, and =skip:off=
   while SponsorBlock skipping is off.
-- A video resolved again after a playback error now plays before the
-  failed entry is removed, so mpv no longer moves on to the next video
-  meanwhile, and it no longer counts as played twice.
 - =T= in a channel's buffer switches between its videos and its past
   live streams, each cached apart.  A channel that never streamed shows
   an empty list.
-- =x= mutes the channel at hand (in the feed or the channels list): its
-  videos leave the subscription feed, =t m= shows them again, and =x=
-  unmutes.  Its own uploads still show everything.  Muted channels are
-  marked in the channels list.  The cache is now schema version 5, with
-  a =channel_prefs= table.  yt backs the cache up first.  A yt from
-  before the backups (0.3.0 and older) refuses a version 5 cache: after
-  rolling back that far, restore the newest =yt.sqlite.backup-…= over
-  =yt.sqlite=.
+- =x= mutes or unmutes the channel at hand (in the feed or the channels
+  list): its videos leave the subscription feed, and =t m= shows them
+  again.  Its own uploads still show everything.  The channels list
+  marks muted channels.
 - The cache is safer to keep:
   - Before yt changes the cache's format, it writes a copy next to it
     (=yt.sqlite.backup-…=, the newest three kept); =M-x yt-cache-backup=
@@ -44,30 +41,35 @@
     to, instead of refusing it.
   - =yt-doctor= shows the cache's schema version, size and backups.
   - A cache file that is not a database any more is kept aside as
-    =yt.sqlite.damaged-…= and yt starts a fresh one, saying how to go
+    =yt.sqlite.damaged-…=, and yt starts a fresh one, saying how to go
     back to the newest backup; a locked or newer cache is never taken
     for damaged.  A row that cannot be read is left out instead of
     stopping the whole feed.
   - Forgetting the history (=yt-forget-history=, =D= in the history)
-    leaves no old copy of the rows in the file: SQLite overwrites deleted
-    rows, and its write-ahead log is emptied.
-  - The saved playlists and the channels list count unwatched videos with
-    one query instead of reading every cached video of every row.
+    leaves no old copy of the rows in the cache file: SQLite overwrites
+    deleted rows, and its write-ahead log is emptied.  The backups and
+    damaged copies are separate files, which it does not touch.
+- yt installs with =package-vc-install=: an =.elpaignore= keeps the tests
+  out of the package.
+- The README is reorganized: installation without Nix (including the
+  cookie exporter), usage with smaller key tables, troubleshooting, and
+  a corrected privacy section.  Development notes moved to
+  =docs/DEVELOPMENT.md=, and the completed plans to =docs/history/=.
+** Fixed
+- After a refresh, a feed opened at the top no longer jumps to its last
+  row.
+- A video fetched again after a playback error now plays before the
+  failed entry is removed, so mpv no longer moves on to the next video
+  meanwhile, and it no longer counts as played twice.
+- Player commands run from outside Emacs no longer leave their repeat
+  keys active in Emacs.
+- Five docstrings showed their key substitutions as raw text, such as
+  "[yt-history]" in =yt-player-youtube-history=; a test now checks every
+  docstring.
+- The saved playlists and the channels list count unwatched videos with
+  one query instead of reading every cached video of every row.
 
 * 0.3.0 (2026-11-03)
-** Keys that changed
-- =/= is the filter key in every list; =s= still filters, saying it will
-  stop in 0.4.
-- =j= gives every key of =C-c y= in all yt buffers; =P= (player keys)
-  works in the channels and playlists lists too.
-- =C= clears the filter in the channels, playlists and history lists.
-- =o= opens a playlist; =z= shuffles the queue in its buffer; === repeats.
-- New: =W= (mark the shown videos watched), =A= (play all from here),
-  =t n= (only new since your last visit), =C-c y .= and =C-c y ,=
-  (chapters).
-- mpv's playlist is the queue: =yt-player-queue= on =C-c y l=; the old
-  command names still work.
-** Everything else
 - mpv's playlist is called the queue, so that it is not mistaken for a
   YouTube playlist: =C-c y l= shows =*yt-queue*= (=yt-player-queue=, in
   =yt-queue-mode=), and =C-c y z= is =yt-player-shuffle-queue=.  The old
@@ -233,7 +235,10 @@
   label for which-key ("subscriptions", "channels", …), and
   =yt-subscriptions= is another name for =yt=, so the main view is easy to
   find.
+
 * 0.1.0 (2026-11-01)
+The first release, built in the milestones M0 to M7 of
+[[file:docs/history/PLAN.md][docs/history/PLAN.md]].
 ** M7: thumbnails, diagnostics and documentation
 - =yt-thumbs.el=: thumbnails from i.ytimg.com, fetched with curl without
   cookies, four at a time, once per video, through a =.part= file; the feed

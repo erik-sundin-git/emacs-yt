@@ -21,7 +21,7 @@
 ;;; Commentary:
 
 ;; What the yt list buffers (feed, channels, playlists, history, the
-;; player's playlist) share:
+;; queue) share:
 ;;
 ;; - The faces of their columns.
 ;; - `yt-list-mode', the base of the channels, playlists and history

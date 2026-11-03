@@ -1,5 +1,7 @@
 # yt improvement plan
 
+> Historical: this document records a plan that is complete. The code, the README and docs/DEVELOPMENT.md are authoritative where they differ.
+
 Written 2026-11-02/03 against commit 584782d.  Ten planners each wrote
 one section (reliability, performance, UX and keys, playback,
 discovery, privacy and security, testing and CI, architecture,
@@ -20,8 +22,8 @@ Effort: S (under half a day), M (a day or two), L (more).
   with tests and a green CI run.  Found on the way: `yt-cache.el` used
   `cl-struct-slot-value` without cl-macs at run time (caught by the new
   load check), and a test that raced on busy CI runners.
-- **M11-M15: not started.**  Reviewed again on 2026-11-03 (see "Second
-  review" at the end): reordered to M12, M11, M14, M13, M15.
+- **M11-M15:** reviewed again on 2026-11-03 (see "Second review" at the
+  end) and reordered to M12, M11, M14, M13, M15; all done, below.
 - **M12: done** (2026-11-03), ccda6bf to 7cdfdc8, released as 0.3.0.  The
   shared list base came out line-neutral rather than -150 (it took on
   the faces, the filter syntax and the empty messages), so the package

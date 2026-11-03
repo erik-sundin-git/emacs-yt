@@ -24,7 +24,8 @@
 ;; and controlled over its JSON IPC socket, which lives in yt's private
 ;; runtime directory (mpv runs any command sent to it).  mpv gets only
 ;; stream URLs that yt resolved (see yt-player.el); its own yt-dlp hook
-;; is off, because it fetches streams before YouTube releases them.
+;; is off, because the hook fetches streams before YouTube releases
+;; them.
 ;;
 ;; Each file mpv loads has a playlist entry id, which the reply to
 ;; "loadfile" reports.  yt follows the entries by id, so that when one

@@ -83,7 +83,8 @@
             pkgs.gnused
             pkgs.libnotify
           ];
-          text = builtins.readFile ./bin/yt-remote;
+          # writeShellApplication writes its own shebang.
+          text = lib.removePrefix "#!/usr/bin/env bash\n" (builtins.readFile ./bin/yt-remote);
         };
 
       # mpv's MPRIS script, without the xesam:url it would publish: for yt

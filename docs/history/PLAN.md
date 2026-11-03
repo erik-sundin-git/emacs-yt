@@ -1,5 +1,7 @@
 # yt: YouTube subscriptions in Emacs (implementation plan)
 
+> Historical: this document records a plan that is complete. The code, the README and docs/DEVELOPMENT.md are authoritative where they differ.
+
 > Status: implemented; all milestones M0–M7 are done (2026-11-01). Sections marked "Changed in Mn" record where the code differs from the original plan. Written 2026-10-31. Five planning agents wrote it and ten judge agents reviewed it. Appendix A lists every review finding and what was done with it.
 
 ## 0. Goals, decisions, environment

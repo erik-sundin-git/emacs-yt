@@ -24,7 +24,7 @@
 ;; programs, the environment, the directories, the cookie file (modes
 ;; and counts only, never values) and the sign-in state.
 ;; `yt-debug-fetch-feed' fetches the subscription feed and lists the
-;; parsed entries, which is useful until the feed buffer exists.
+;; parsed entries, which is useful for debugging the parser.
 
 ;;; Code:
 

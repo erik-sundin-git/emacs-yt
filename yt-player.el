@@ -30,8 +30,8 @@
 ;; and `-now-playing'.  The commands `yt-player-backend-command' gets
 ;; are `pause', `seek' (seconds, relative), `speed' (a factor, or nil
 ;; for normal), `next', `previous', `quit', `shuffle', `play-index'
-;; and `remove' (a queue index), `chapter' (+1 or -1), `unskip' and
-;; `toggle-skipping'; a backend signals a `user-error' for the others.
+;; and `remove' (a queue index), `chapter' (+1 or -1), `unskip',
+;; `toggle-skipping' and `toggle-audio'; a backend signals a `user-error' for the others.
 ;; When a video starts, a backend calls `yt-player-started'; when the
 ;; player exits, `yt-player-backend-exited'.  `yt-player-title',
 ;; `yt-player-report-failure', `yt-player-redact' and
@@ -136,7 +136,7 @@ POSITION is in seconds, or nil if not known."
 When a video starts, yt-dlp tells YouTube you watched it, as its
 --mark-watched option does.  YouTube then counts the video as
 watched to the end, shows it in your history on every device, and
-uses it for recommendations.  yt's own history, \[yt-history],
+uses it for recommendations.  yt's own history, \\[yt-history],
 does not depend on this."
   :type 'boolean
   :group 'yt-player
@@ -367,7 +367,7 @@ replaces a waiting one, unless either is INDEPENDENT."
 
 (defun yt-player--add-to-youtube-history (video)
   "Add VIDEO to the YouTube history, once per session.
-Problems go to the player log, \[yt-player-show-log]."
+Problems go to the player log, \\[yt-player-show-log]."
   (let ((id (yt-video-id video)))
     (when (and yt-player-youtube-history id
                (not (gethash id yt-player--youtube-history-sent)))
@@ -567,7 +567,7 @@ picture back."
 
 ;;;###autoload
 (defun yt-enqueue (videos)
-  "Add VIDEOS to the player's playlist.
+  "Add VIDEOS to the queue, the player's playlist.
 Interactively, add the video at point or the videos in the region,
 or ask for a URL.  Only players with a playlist, such as mpv, can
 queue videos."
@@ -1142,7 +1142,7 @@ Without a region, move to the next row."
 
 (define-derived-mode yt-queue-mode tabulated-list-mode "yt-queue"
   "Major mode for the player's queue: the videos waiting in mpv's playlist.
-\{yt-queue-mode-map}"
+\\{yt-queue-mode-map}"
   :group 'yt-player
   :interactive nil
   (setq tabulated-list-entries #'yt-queue--entries)

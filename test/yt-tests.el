@@ -219,5 +219,26 @@ comment autoloads whatever comes next instead."
   (should (eq (keymap-lookup yt-queue-mode-map "z") #'yt-player-shuffle-queue))
   (should (eq (keymap-lookup yt-player-repeat-map "=") #'yt-player-normal-speed)))
 
+(ert-deftest yt-docstrings-substitute-keys ()
+  "Docstrings write key substitutions with two backslashes.
+With one, the reader drops it and \\[cmd] shows as [cmd]."
+  (dolist (file (directory-files (file-name-directory (locate-library "yt")) nil
+                                 "\\`yt.*\\.el\\'"))
+    (unless (string-suffix-p "-autoloads.el" file)
+      (require (intern (file-name-sans-extension file)))))
+  (let (bad)
+    (mapatoms
+     (lambda (symbol)
+       (when (string-prefix-p "yt" (symbol-name symbol))
+         (dolist (doc (list (and (fboundp symbol)
+                                 (ignore-errors (documentation symbol t)))
+                            (ignore-errors
+                              (documentation-property symbol 'variable-documentation t))))
+           (when (and (stringp doc)
+                      (string-match "\\(?:^\\|[^\\]\\)\\(\\[yt-[a-z-]+\\]\\|<yt-[a-z-]+-map>\\|{yt-[a-z-]+-map}\\)"
+                                    doc))
+             (push (cons symbol (match-string 1 doc)) bad))))))
+    (should-not bad)))
+
 (provide 'yt-tests)
 ;;; yt-tests.el ends here

@@ -21,7 +21,7 @@
 ;;; Commentary:
 
 ;; `yt-feed-mode' lists videos in a tabulated list, in the order of the
-;; feed they came from.  \\[yt] shows the subscription feed: first the
+;; feed they came from.  M-x yt shows the subscription feed: first the
 ;; cached videos, at once, then the result of an asynchronous refresh,
 ;; which is merged into the cache.  A refresh keeps point, and the
 ;; position of each window showing the feed, on the same video.
@@ -75,7 +75,7 @@ playlist, and (search QUERY) for search results.")
 (defvar-local yt-feed--tab nil
   "The tab of a channel this buffer shows.
 nil for its videos, `streams' for its past live streams; see
-\[yt-feed-toggle-streams].")
+\\[yt-feed-toggle-streams].")
 
 (defvar yt-playlist-limit 300
   "Number of videos fetched from a playlist.")

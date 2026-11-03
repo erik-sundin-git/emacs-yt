@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # yt-remote ACTION: run a yt player command in the running Emacs.
 #
 # For window manager key bindings: `yt-remote pause' pauses or resumes

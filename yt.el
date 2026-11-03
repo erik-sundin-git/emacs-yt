@@ -35,7 +35,7 @@
 ;;
 ;; This file holds the customization groups, the shared state and
 ;; runtime directories, the `yt-map' prefix keymap and the `yt' entry
-;; command.  See docs/PLAN.md in the repository for the design.
+;; command.  See docs/DEVELOPMENT.md in the repository for the design.
 ;;
 ;; Prior art: empv and mpv.el, whose mpv IPC handling informed the
 ;; design of the mpv backend.
@@ -167,7 +167,9 @@ the yt-dlp program."
   :package-version '(yt . "0.1.0"))
 
 (defcustom yt-export-cookies-program "yt-export-cookies"
-  "Name or file name of the cookie exporter shipped in yt's Nix flake."
+  "Name or file name of the cookie exporter, yt-export-cookies.
+It is bin/yt-export-cookies.py in yt's repository, which the Nix flake
+packages; elsewhere, put a wrapper that runs it with Python 3 on PATH."
   :type 'string
   :group 'yt-backend
   :package-version '(yt . "0.1.0"))
@@ -246,7 +248,7 @@ a session, and \\[universal-argument] \\[yt-feed-refresh], always fetch them all
 
 (defcustom yt-feed-hide-watched t
   "Non-nil means the feed hides videos you have watched.
-\<yt-feed-mode-map>\[yt-feed-toggle-hide-watched] shows them for a while."
+\\<yt-feed-mode-map>\\[yt-feed-toggle-hide-watched] shows them for a while."
   :type 'boolean
   :group 'yt-feed
   :package-version '(yt . "0.4.0"))

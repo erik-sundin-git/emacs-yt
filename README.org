@@ -1,215 +1,296 @@
 #+title: yt: YouTube subscriptions in Emacs
 
 yt shows the subscription feed of your YouTube account in an Emacs buffer,
-and plays videos in an mpv window controlled from Emacs or streams them to
-VLC.  It signs in with cookies from a Chromium profile dedicated to it and
-fetches everything with yt-dlp.  It uses no OAuth and no API key.
+and plays videos in an mpv window controlled from Emacs, or streams them to
+VLC.  It signs in with cookies from a Chromium profile used only for it,
+and fetches everything with yt-dlp.  It uses no OAuth and no API key.
+
+Needs: Emacs 30, yt-dlp with a JavaScript runtime, mpv (or VLC), Chromium,
+Python 3.  Linux only.
 
 - =M-x yt= opens the subscription feed: the cached videos at once, then a
   refresh in the background.
-- =RET= plays in mpv, which Emacs controls (pause, seek, speed, queue,
-  now-playing in the mode line, resume where you stopped, skipping
-  sponsored segments with SponsorBlock).  =v= streams to
+- =RET= plays a video in mpv, which Emacs controls: pause, seek, speed, a
+  queue, the video playing in the mode line, resuming where you stopped,
+  and skipping sponsored segments with [[https://sponsor.ajay.app][SponsorBlock]].  =v= streams it to
   VLC instead.
-- Channels, channel uploads, subscribing and unsubscribing, the playlists a
-  channel made (and saving them in yt), search, video details with chapters, watched marks, filters,
-  thumbnails, completion and embark actions.
+- Channels and their uploads and playlists, subscribing, saved playlists,
+  search, video details with chapters, watched marks, filters and
+  thumbnails; completion and embark actions; YouTube links and org links
+  that play in yt; player keys for your window manager.
 
 * Requirements
-- Emacs 30.1 or later, built with SQLite support
-- yt-dlp (recent: YouTube changes often), with a JavaScript runtime such as
-  deno (the nixpkgs package bundles one)
-- mpv, VLC, or both; curl for thumbnails
-- ungoogled Chromium or Chromium, with a profile used only for YouTube
-- Linux; tested on NixOS with sway (Wayland)
+- Emacs 30.1 or later, built with SQLite support.
+- yt-dlp, kept recent: YouTube changes often.  It needs a JavaScript
+  runtime to run YouTube's player script, by default deno; the nixpkgs
+  yt-dlp brings its own.
+- mpv, VLC, or both.  mpv is the one Emacs controls; VLC only plays.
+- Chromium or ungoogled Chromium (not Chrome, Brave or Firefox), with a
+  profile used only for YouTube.  Its cookies are decrypted with the GNOME
+  keyring (Secret Service), or need none; KWallet is not supported.
+- Python 3 with the =yt-dlp= and =secretstorage= modules, for the cookie
+  exporter.
+- curl, for thumbnails, subscribing and SponsorBlock.
+- Linux.  Tested on NixOS with sway (Wayland); other distributions should
+  work.
 
 * Installation
+** With package-vc
+#+begin_src emacs-lisp
+(package-vc-install '(yt :url "https://github.com/erik-sundin-git/emacs-yt"))
+(keymap-global-set "C-c y" yt-map)
+#+end_src
+
+** With straight.el
+#+begin_src emacs-lisp
+(use-package yt
+  :straight (yt :host github :repo "erik-sundin-git/emacs-yt" :files ("*.el"))
+  :bind-keymap ("C-c y" . yt-map))
+#+end_src
+
+** From a checkout
+#+begin_src emacs-lisp
+(add-to-list 'load-path "/path/to/emacs-yt")
+(require 'yt)
+(keymap-global-set "C-c y" yt-map)
+#+end_src
+
+** The helper programs
+yt runs two small programs from the checkout's =bin/= directory:
+
+- =yt-export-cookies= exports the youtube.com cookies of the Chromium
+  profile.  yt cannot sign in without it.  Without Nix, put a wrapper on
+  =PATH= (or set =yt-export-cookies-program= to its file name):
+  #+begin_src sh
+  printf '#!/bin/sh\nexec python3 /path/to/emacs-yt/bin/yt-export-cookies.py "$@"\n' \
+    > ~/.local/bin/yt-export-cookies
+  chmod +x ~/.local/bin/yt-export-cookies
+  #+end_src
+- =yt-remote= runs player commands from outside Emacs (see [[*Player keys outside Emacs][Player keys
+  outside Emacs]]); it is optional.  Copy =bin/yt-remote= onto =PATH= and
+  make it executable.  It needs =emacsclient= and =notify-send=.
+
 ** With Nix and Home Manager
-The flake provides a Home Manager module.  Add the flake as an input, import
-the module and enable it:
+The flake provides a Home Manager module, which installs mpv and both
+helper programs:
 
 #+begin_src nix
 # flake.nix inputs
 emacs-yt = {
-  url = "git+file:///home/you/dev/emacs-yt";   # or a remote URL
+  url = "github:erik-sundin-git/emacs-yt";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 
 # in the Home Manager configuration
 imports = [ inputs.emacs-yt.homeModules.default ];
-programs.yt.enable = true;        # mpv and yt-export-cookies
+programs.yt.enable = true;        # mpv, yt-export-cookies, yt-remote
 programs.yt.installElisp = true;  # yt in programs.emacs.extraPackages
-programs.yt.swayWindowRule = true;  # optional: float mpv's window in sway
+programs.yt.mpris = true;         # optional: media keys control mpv
 #+end_src
 
-The module does not set =nixpkgs.overlays=, so it works with
-=useGlobalPkgs=.  It does not install yt-dlp or VLC.  Alternatively,
-=overlays.default= adds =yt= to every Emacs package set
-(=emacs.pkgs.yt=), plus =yt-export-cookies= and =yt-runtime= (mpv and the
-exporter); =nix build= builds the package itself.
-
-** From the checkout, with straight.el
-#+begin_src elisp
-(use-package yt
-  :straight (yt :type nil :local-repo "~/dev/emacs-yt" :files ("*.el"))
-  :commands (yt yt-login yt-play-url)
-  :bind-keymap ("C-c y" . yt-map))
-#+end_src
-
-The cookie exporter, =yt-export-cookies=, then comes from
-=nix profile install ~/dev/emacs-yt#runtime= (with mpv), or set
-=yt-export-cookies-program=.  After changing the code, run
-=M-x straight-rebuild-package=.
+The module does not install yt-dlp or VLC.  It does not set
+=nixpkgs.overlays=, so it works with =useGlobalPkgs=.  Alternatively,
+=overlays.default= adds =yt= to every Emacs package set (=emacs.pkgs.yt=),
+plus =yt-el=, =yt-export-cookies=, =yt-remote= and =yt-runtime= (mpv and
+the exporter).
 
 * Setup
 1. In Chromium, create a new profile, for example named =emacs-yt=, and
    sign in to YouTube there, and nowhere else.  The cookies yt reads are
    Google session tokens: a profile used only for this keeps your main
    Google session out of reach.
-2. Run =M-x yt-login= (or just =M-x yt=).  Choose the profile; yt
-   preselects one named =emacs-yt= and asks for confirmation before using
-   =Default=.  It exports only the youtube.com cookies and checks that they
-   work.
-3. =M-x yt-doctor= shows what yt found: programs and versions, the
-   display, directories, the cache, and the sign-in state.
+2. Run =M-x yt-login=, or just =M-x yt=.  Choose the profile: yt preselects
+   one named =emacs-yt=, and asks before using =Default=.  It exports only
+   the youtube.com cookies and checks that they work.
+3. =M-x yt= shows the subscription feed; =RET= on a video plays it.
 
-When the session expires, yt exports the cookies again by itself, once.  If
-YouTube asks to confirm you are not a bot, open YouTube in the profile, then
-try again.  yt pauses its requests for 15 minutes, and the feed's header line
-says until when; =M-x yt-login= (or =yt-check-auth=) ends the pause as soon as
-YouTube accepts the session again.
+If signing in fails, run =M-x yt-doctor=: it names the program, profile or
+keyring that is missing.  =C-u M-x yt-login= chooses another profile.  See
+also [[*Troubleshooting][Troubleshooting]].
 
-* Keys
-=C-c y= is the suggested binding for =yt-map=:
+** The mpv window
+mpv opens its own window, with the Wayland app id =emacs-yt=, so window
+managers can place it.  For example, in sway:
 
-| Key            | Command                                      |
-|----------------+----------------------------------------------|
-| =y= or =RET=   | the subscription feed, yt's main view        |
-| =c=            | the channels you subscribe to                |
-| =P=            | the playlists you saved                      |
-| =h=            | the videos you played (history)              |
-| =s=            | search YouTube                               |
-| =f=            | choose a feed video with completion, play it |
-| =u=            | play a YouTube URL                           |
-| =L= / =d=      | sign in / diagnostics                        |
-| =SPC=          | pause                                        |
-| =<left>= / =<right>= | seek 5 s (a prefix argument sets the seconds) |
-| =<down>= / =<up>=    | seek 60 s                              |
-| =[= / =]= / ===  | slower / faster / normal speed             |
-| =n= / =p=      | next / previous in the queue                 |
-| =.= / =,=      | next / previous chapter                      |
-| =l=            | the queue: the videos in mpv's playlist      |
-| =z=            | shuffle the queue                            |
-| =U= / =K=      | undo the last SponsorBlock skip / skipping on or off |
-| =M=            | switch the video playing to audio only, or back |
-| =S= / =Q=      | stop / quit mpv                              |
-| =!=            | log of playback problems                     |
+#+begin_src conf
+for_window [app_id="^emacs-yt$"] floating enable, sticky enable, resize set 960 540
+#+end_src
 
-The player keys repeat without the prefix: =C-c y <right> <right> <right>=.
-The mode line shows the video playing, its position, the chapter, the
-place in the queue (=[2/5]=), ♪ for audio only, LIVE, and =skip:off=
-while SponsorBlock skipping is off.
-With which-key, =C-c y= shows a short label for each key.
-=M-x yt= and =M-x yt-subscriptions= also open the subscription feed.
+With the Home Manager module, =programs.yt.swayWindowRule = true;= adds
+that rule, and =programs.yt.swayWindowCommand= changes its command.
 
-In the feed, channel uploads and search results (and, for the video keys,
-the info and queue buffers):
+When the queue ends, mpv stays open with an empty window, ready for the
+next video; add =--keep-open=yes= to =yt-mpv-extra-args= to keep the last
+frame instead.  =C-c y Q= closes it.  From an Emacs daemon, mpv and VLC
+open on the display of the selected frame.
 
-| Key           | Command                                                  |
-|---------------+----------------------------------------------------------|
-| =RET=         | play (mpv if installed, else VLC); =C-u RET= from the start |
-| =v= / =m=     | play in VLC / mpv                                        |
-| =M=           | play audio only, in mpv                                  |
-| =a=           | add to the queue (on the region too)                     |
-| =i=           | details: description, chapters (play from there), tags  |
-| =o=           | the uploads of the video's channel                       |
-| =O=           | the playlists the video's channel made                   |
-| =w= / =u=     | mark watched / not watched (on the region too)           |
-| =b= / =y= / =Y= | open in a browser / copy the URL / copy "Title — URL"  |
-| =P=           | the player keys above                                    |
-| =g= / =G=     | refresh / cancel and refetch everything                  |
-| =/=           | filter: words, =@channel=, =!exclude= (=s= too, until 0.4) |
-| =c= / =C=     | show one channel / clear the filters                     |
-| =t w=, =t s=, =t u= | show or hide watched videos (hidden by default), Shorts, upcoming streams |
-| =t n=         | show only the videos new since your last visit (◆)      |
-| =x= / =t m=   | mute the channel at hand (its videos leave the feed) / show muted ones |
-| =T=           | in a channel: its past live streams / its videos again  |
+* Usage
+The everyday keys, with =C-c y= as the prefix:
+
+- Play the video at point: =RET=; from the start: =C-u RET=.  yt resumes
+  where you stopped by itself.
+- Add it to the queue: =a=; see the queue: =C-c y l=.
+- Mark it watched or not watched: =w= / =u=.  Watched videos are hidden;
+  =t w= shows them.
+- Search YouTube: =C-c y s=.  Subscribe to the video's channel: =+=.
+- Your channels: =C-c y c=.  What you played: =C-c y h=.
+- Pause, from any buffer: =C-c y SPC=; seek: =C-c y <right>=.
+
+Some terms: the *queue* is the list of videos mpv plays next.  A
+*playlist* is a YouTube playlist; the ones you save stay in yt, not in your
+YouTube account.  A *video list* is any buffer of videos: the
+subscription feed, a channel's uploads, a playlist or search results.  The
+*channel at hand* is the channel of the video at point, or the channel
+whose uploads the buffer shows.
+
+** Keys under C-c y
+=C-c y= is the suggested binding for =yt-map=.  With which-key, it shows a
+short label for each key.
+
+| Key            | Opens                                         |
+|----------------+-----------------------------------------------|
+| =y= or =RET=   | the subscription feed, yt's main view         |
+| =c=            | the channels you subscribe to                 |
+| =P=            | the playlists you saved                       |
+| =h=            | the videos you played (history)               |
+| =s=            | a YouTube search                              |
+| =f=            | a feed video chosen with completion, to play  |
+| =u=            | a YouTube URL, to play                        |
+| =L= / =d=      | sign in / diagnostics                         |
+
+| Key                  | Player command                                  |
+|----------------------+-------------------------------------------------|
+| =SPC=                | pause                                           |
+| =<left>= / =<right>= | seek 5 s (a prefix argument sets the seconds)   |
+| =<down>= / =<up>=    | seek 60 s                                       |
+| =[= / =]= / ~=~      | slower / faster / normal speed                  |
+| =n= / =p=            | next / previous in the queue                    |
+| =.= / =,=            | next / previous chapter                         |
+| =l= / =z=            | the queue / shuffle it                          |
+| =U= / =K=            | undo the last SponsorBlock skip / skipping on or off |
+| =M=                  | switch the video playing to audio only, or back |
+| =S= / =Q=            | stop / quit mpv                                 |
+| =!=                  | the log of playback problems                    |
+
+The keys for pausing, seeking, speed, next and previous, and chapters
+repeat without the prefix: =C-c y <right> <right> <right>=.  The mode line
+shows the video playing, its position, the chapter, the place in the queue
+(=[2/5]=), ♪ for audio only, LIVE, and =skip:off= while SponsorBlock
+skipping is off.  =M-x yt= and =M-x yt-subscriptions= also open the
+subscription feed.
+
+** Keys in video lists
+These keys work in every video list; the video keys also work in the
+details and queue buffers.
+
+| Key             | Video at point (or the region)                      |
+|-----------------+-----------------------------------------------------|
+| =RET=           | play (mpv if installed, else VLC); =C-u RET= from the start |
+| =v= / =m= / =M= | play in VLC / in mpv / audio only, in mpv           |
+| =a=             | add to the queue                                    |
+| =i=             | details: description, chapters (play from there), tags |
+| =w= / =u=       | mark watched / not watched                          |
+| =o= / =O=       | the uploads / the playlists of its channel          |
+| =b= / =y= / =Y= | open in a browser / copy the URL / copy "Title — URL" |
+
+| Key                 | Filter                                            |
+|---------------------+---------------------------------------------------|
+| =/=                 | words, =@channel=, =!exclude=                     |
+| =c= / =C=           | show one channel / clear the filters              |
+| =t w=               | show or hide watched videos (hidden by default)   |
+| =t s= / =t u=       | hide Shorts / upcoming and live streams           |
+| =t n=               | show only the videos new since your last visit (◆) |
+| =t m=               | show the videos of muted channels                 |
+| =t i=               | thumbnails                                        |
+
+| Key           | List                                                  |
+|---------------+-------------------------------------------------------|
+| =g= / =G=     | refresh / cancel and fetch everything again           |
+| =z=           | play the videos shown in random order                 |
+| =A=           | play the unwatched videos shown from point down       |
 | =W=           | mark every video shown as watched (=u= right after undoes it) |
-| =t i=         | thumbnails                                               |
-| =l=           | the channels                                             |
-| =+= / =-=     | subscribe to / unsubscribe from the channel at hand; in a playlist: save it in yt / forget it |
-| =z=           | play the videos shown in random order, in mpv            |
-| =A=           | play the unwatched videos shown from point down, in order |
-| =L=           | sign in                                                  |
-| =j=           | every key of =C-c y=: =j c= channels, =j h= history, …   |
-| =S=           | sort by the column at point (tabulated-list)             |
+| =+= / =-=     | subscribe to / unsubscribe from the channel at hand; in a playlist, save it / forget it |
+| =x=           | mute or unmute the channel at hand                    |
+| =T=           | in a channel: its past live streams, or its videos again |
+| =S=           | sort by the column at point                           |
+| =l= / =L=     | the channels / sign in                                |
+| =P= / =j=     | the player keys / the keys of =C-c y=                 |
 
-Every yt list has =j= for the keys of =C-c y=, =P= for the player keys,
-=/= to filter (=C= clears it), =g= to refresh and =L= to sign in.
+In the subscription feed, ● marks a video you have not watched, and ◆ one
+that arrived since your last visit (when you last opened the feed, at least
+ten minutes earlier); the header line counts them.
 
-In the channels list, =RET= or =o= shows a channel's uploads, =O= its
-playlists, and =-= or =d= unsubscribes from it.
-A channel's playlists, and the saved ones (=C-c y P=), open with =RET= or
-=o= in playlist order; =+= saves the playlist at point, =-= or =d= forgets
-it, =z= shuffles it, and =b= opens it in a browser.  In the history, =d=
-removes the video at point (or the region) and =D= clears the list.  In
-the queue (=C-c y l=, mpv's playlist), =RET= plays an entry, =d= removes it
-and =z= shuffles it.
+** Other lists
+| List                   | Keys                                                  |
+|------------------------+-------------------------------------------------------|
+| Channels (=C-c y c=)   | =RET= or =o= uploads, =O= playlists, =b= browser, =x= mute, =-= or =d= unsubscribe |
+| Playlists (=C-c y P=, =O=) | =RET= or =o= open, =z= shuffle, =+= save, =-= or =d= forget, =b= browser |
+| History (=C-c y h=)    | the video keys, =d= remove, =D= clear                 |
+| Queue (=C-c y l=)      | the video keys, =RET= play this entry, =d= remove, =z= shuffle |
 
-In the subscription feed, ● marks a video you have not watched and ◆ one
-that arrived since your last visit (when you last opened the feed, at
-least ten minutes earlier); the header line counts them.
+Every list has =g= to refresh, =P= for the player keys and =j= for the keys
+of =C-c y=.  All but the queue have =/= to filter (=C= clears it) and =L=
+to sign in.
 
-The channel at hand is the channel of the video at point, or the channel
-whose uploads the buffer shows; its header line says whether you subscribe
-to it.  Unsubscribing asks first, and removes the channel's videos from the
+** Channels, subscribing and muting
+The header line of a channel's uploads says whether you subscribe to it.
+Unsubscribing asks first, and removes the channel's videos from the
 subscription feed.  If YouTube refuses the request, yt offers to open the
 channel in its Chromium profile, to click Subscribe there.
 
-Shuffling plays one video at once and keeps two more queued in mpv; each
-time one starts, the next is fetched, so a long playlist does not send
-YouTube a request per video at once.  =n= skips ahead; playing anything
-else ends the shuffle.  Saved playlists live in yt's cache, not in your
-YouTube account, and show how many of their videos you have not watched.
+=x= mutes a channel: its videos leave the subscription feed, but its own
+uploads still show everything, and the channels list marks it.  =t m=
+shows the muted channels' videos in the feed, and =x= again unmutes.  Shorts name
+no channel, so muting cannot hide them; =t s= does.
 
-With embark, =embark-act= on a video (a completion candidate or the row at
-point) offers the same keys.  With marginalia, completion candidates show
-their channel, age and duration.
+** Playlists and shuffling
+A channel's playlists (=O=) and the saved ones (=C-c y P=) open in playlist
+order, and show how many of their videos you have not watched.  Shuffling
+queues one video at a time, plus two ahead; yt fetches the next as each
+starts, so a long playlist does not send YouTube a request per video at
+once.  =n= skips ahead; playing anything else ends the shuffle.
 
-* History
+** History
 =C-c y h= lists the videos you played in yt, the most recently played
 first, with how long ago you played them and how far you got: where you
-stopped, or "watched".  =RET= plays a video again, from where you stopped,
-and the other video keys work too.  =d= removes the videos in the region or
-at point, =D= clears the list, and =/= filters it by title or channel.
-Removing a video keeps its watched mark and resume position.
+stopped, or "watched".  =RET= plays a video again, from where you stopped.
+Removing a video from the history keeps its watched mark and resume
+position.
 
 The history stays in yt's cache.  With =yt-player-youtube-history= set, yt
 also adds each video you play to your YouTube history, as yt-dlp's
 =--mark-watched= does, so it shows on your other devices.  YouTube then
 counts the video as watched to the end, and uses it for recommendations.
-A video is sent once per session; problems go to =C-c y !=.
+yt sends each video at most once per session; problems go to =C-c y !=.
 
-* SponsorBlock
-mpv skips the segments of videos that [[https://sponsor.ajay.app][SponsorBlock]]'s community marked as
+** SponsorBlock
+mpv skips the segments of videos that SponsorBlock's community marked as
 sponsors, self-promotion or reminders to subscribe, and says so in the echo
 area: "Skipped sponsor (44 s)".  =C-c y U= goes back to the start of the
 segment skipped last, which is then not skipped again; =C-c y K= turns
-skipping off or on for the session.  The info buffer (=i=) lists a video's
-segments, and which of them mpv skips.
+skipping off or on for the session.  The details buffer (=i=) lists a
+video's segments, and which of them mpv skips.
 
 =yt-sponsorblock-categories= chooses the categories; intros, endcards,
 recaps, filler and others are off by default, and nil turns SponsorBlock
-off.  yt asks SponsorBlock with curl while it resolves the streams, so
-playback does not wait for it; when it cannot be reached, the video plays
-without skipping.  VLC skips nothing: Emacs does not control it.
+off.  yt asks SponsorBlock while it fetches the video's streams, so
+playback does not wait for it; when SponsorBlock cannot be reached, the
+video plays without skipping.  VLC skips nothing: Emacs does not control
+it.
 
-* YouTube links elsewhere in Emacs
-With =(yt-url-handler-mode 1)= in your init file, =browse-url= opens YouTube
-links in yt: a video plays in mpv, from the link's =t== time if it has one,
-and a playlist or channel opens in a yt buffer.  That covers links in mail
-(notmuch, gnus), org, help and most other buffers; eww passes only the
-links matching =eww-use-browse-url= to =browse-url=.  With a prefix
+** Completion and embark
+=C-c y f= chooses a feed video with completion.  With embark, =embark-act=
+on a video (a completion candidate or the row at point) offers the video
+keys.  With marginalia, completion candidates show their channel, age and
+duration.
+
+* Integration
+** YouTube links elsewhere in Emacs
+With =(yt-url-handler-mode 1)= in your init file, =browse-url= opens
+YouTube links in yt: a video plays in mpv, from the link's =t== time if it
+has one, and a playlist or channel opens in a yt buffer.  That covers links
+in mail (notmuch, gnus), org, help and most other buffers; eww passes only
+the links matching =eww-use-browse-url= to =browse-url=.  With a prefix
 argument, or when yt cannot open a link, the browser gets it as before.
 yt's own "open in browser" commands (=b=) never go through the handler.
 =yt-play-url= also starts at a link's =t== time.
@@ -217,8 +298,7 @@ yt's own "open in browser" commands (=b=) never go through the handler.
 Links come from text you did not write, so yt accepts only the YouTube
 hosts, rebuilds a clean URL from the video, playlist or channel id
 (dropping tracking parameters such as =si==), and never hands the link
-itself to yt-dlp.  With =yt-player-youtube-history= on, a video you open
-from a link is added to your YouTube history like any other you play.
+itself to yt-dlp.
 
 ** Org links
 With
@@ -234,20 +314,22 @@ a plain YouTube URL, so notes do not depend on yt, and with
 =yt-url-handler-mode= on, following it plays the video in yt from that
 time.
 
-* Controlling yt from outside Emacs
+** Player keys outside Emacs
 =yt-remote ACTION= runs a player command in the running Emacs, through
-=emacsclient=, for window manager keys: =yt-remote pause= pauses whatever
-yt plays, wherever the focus is.  The actions are =pause=, =seek-forward=,
-=seek-backward=, =seek-forward-more=, =seek-backward-more=, =next=,
-=previous=, =next-chapter=, =previous-chapter=, =faster=, =slower=,
-=normal-speed=, =unskip=, =toggle-skipping=, =toggle-audio=, =stop= and
-=quit= (=yt-player-remote-commands=).  What yt says back, such as "Nothing
-is playing", shows as a notification; most actions say nothing, since mpv
-answers later.  Emacs must run a server (the daemon, or =M-x
-server-start=); =yt-remote= never starts one.  The Home Manager module
-installs it; elsewhere, =nix build .#yt-remote=.
+=emacsclient=, so window manager keys work wherever the focus is:
+=yt-remote pause= pauses whatever yt plays.  The actions are:
 
-A sway mode, for example:
+- =pause=, =stop=, =quit=
+- =seek-forward=, =seek-backward= (5 s), =seek-forward-more=,
+  =seek-backward-more= (1 min)
+- =next=, =previous=, =next-chapter=, =previous-chapter=
+- =faster=, =slower=, =normal-speed=
+- =unskip=, =toggle-skipping=, =toggle-audio=
+
+What yt says back, such as "Nothing is playing", shows as a desktop
+notification.  Most actions say nothing, since mpv answers later.  Emacs
+must run a server (the daemon, or =M-x server-start=); =yt-remote= never
+starts one.  A sway mode, for example:
 
 #+begin_src conf
 bindsym $mod+y mode yt
@@ -260,32 +342,15 @@ mode yt {
 }
 #+end_src
 
-With =programs.yt.mpris = true;= in the Home Manager module, mpv gets its
-MPRIS script, so media keys (=playerctl play-pause=) and status bars
-control yt's mpv too; yt follows what they do.  An MPRIS "Stop" empties
-mpv's playlist, unlike yt's own stop, which keeps the queue.  The option
-adds to =programs.mpv.scripts=, which Home Manager does not allow with a
-custom =programs.mpv.package=.
-
-* The mpv window
-mpv opens its own window with the Wayland app id =emacs-yt=, so window
-managers can place it.  For sway, for example:
-
-#+begin_src
-for_window [app_id="^emacs-yt$"] floating enable, sticky enable, resize set 960 540
-#+end_src
-
-or, with the Home Manager module, =programs.yt.swayWindowRule = true;= (and
-=programs.yt.swayWindowCommand= to change the command), which adds:
-
-#+begin_src nix
-{ criteria.app_id = "^emacs-yt$"; command = "floating enable, sticky enable, resize set 960 540"; }
-#+end_src
-
-When the playlist ends, mpv stays open with an empty window, ready for the
-next video; add =--keep-open=yes= to =yt-mpv-extra-args= to keep the last
-frame instead.  =C-c y Q= closes it.  From an Emacs daemon, mpv and VLC open
-on the display of the selected frame.
+MPRIS is the desktop's protocol for media players: media keys
+(=playerctl play-pause=) and status bars use it.  With
+=programs.yt.mpris = true;= in the Home Manager module, mpv gets its MPRIS
+script, patched not to publish stream URLs, and yt follows what MPRIS
+clients do.  Without Nix, install mpv's =mpris= script yourself, but note
+that the stock script publishes the stream URL (see [[*Privacy][Privacy]]).  An MPRIS
+"Stop" empties mpv's queue, unlike yt's own stop.  The option adds to
+=programs.mpv.scripts=, which Home Manager does not allow with a custom
+=programs.mpv.package=.
 
 * Customization
 =M-x customize-group RET yt= lists every option.  The most useful:
@@ -296,8 +361,8 @@ on the display of the selected frame.
   video as watched (by default after 90%)
 - =yt-player-resume=: resume where you stopped
 - =yt-feed-limit=, =yt-feed-refresh-interval=: how much to fetch, how often
-- =yt-feed-hide-watched=, =yt-feed-hide-shorts=, =yt-feed-hide-upcoming=,
-  =yt-feed-thumbnails=: the feed's defaults
+- =yt-feed-hide-watched= (on by default), =yt-feed-hide-shorts=,
+  =yt-feed-hide-upcoming=, =yt-feed-thumbnails=: the feed's defaults
 - =yt-thumbs-height=: the height of thumbnails, by default 90 pixels
 - =yt-sponsorblock-categories=: the SponsorBlock segments mpv skips
 - =yt-save-minibuffer-history=: let =savehist-mode= keep what you type at
@@ -308,45 +373,77 @@ on the display of the selected frame.
   =yt-login=
 
 * Privacy
-- *Network:* yt-dlp talks to www.youtube.com (pages, the API the pages use,
-  and the player script, run locally by its JavaScript runtime).  Players
-  fetch the video streams from googlevideo.com.  Thumbnails come from
-  i.ytimg.com, through curl, without cookies.  Subscribing and
-  unsubscribing send one request to www.youtube.com through curl, with the
-  cookies.  With =yt-player-youtube-history= set, yt-dlp also tells
-  YouTube about each video you play.  Before mpv plays a video, and when its details are shown, curl
-  asks sponsor.ajay.app for SponsorBlock segments, without cookies, naming
-  only the first 4 characters of the SHA-256 hash of the video id, which
-  many videos share.  There is no telemetry and no self-update.
+- *Network:* there is no telemetry and no self-update.  yt talks to:
+  - www.youtube.com, through yt-dlp: pages, the API the pages use, and the
+    player script, which its JavaScript runtime runs locally.  Subscribing
+    and unsubscribing send one request each, through curl, with the
+    cookies.  With =yt-player-youtube-history= set, yt-dlp tells YouTube,
+    with the cookies, each time a video starts (once per session);
+    YouTube counts it as fully watched, and =yt-forget-history= does not
+    remove it there.
+  - googlevideo.com: the players fetch the video streams.
+  - i.ytimg.com: thumbnails, through curl, without cookies.
+  - sponsor.ajay.app: before mpv plays a video, and when you open its
+    details, curl asks for SponsorBlock segments, without cookies.  The
+    request names only the first 4 characters of the SHA-256 hash of the
+    video id, which many videos share.
 - *Cookies:* only those of the chosen profile, only for youtube.com, in a
-  mode 0600 file under =~/.local/state/yt/=.  Every yt-dlp run gets its own
-  private copy in =$XDG_RUNTIME_DIR/yt/=, deleted afterwards; so does curl
-  when it subscribes, along with a mode 0600 config file holding the
-  request's headers, so nothing derived from the cookies is in the process
-  list.  Cookie values
-  are never logged or shown.  =M-x yt-logout= deletes the files; signing out
-  of YouTube in the profile ends the session itself.
-- *Local data:* the videos you played, watched marks and resume positions
-  are in a mode 0600 SQLite file next to the cookies;
-  =M-x yt-forget-history= clears them all.
-  Only a fixed set of video fields is stored, never yt-dlp's raw output,
-  which holds stream URLs signed for your IP address.  Those are kept in
-  memory only, for mpv, until shortly before they expire, and forgotten
-  on =yt-logout=.
+  mode 0600 file (and its previous version, =.prev=) under
+  =~/.local/state/yt/=.  The exporter asks the GNOME keyring for Chromium's
+  cookie key.  Every yt-dlp run gets its own private copy in
+  =$XDG_RUNTIME_DIR/yt/=, deleted afterwards.  curl gets the same private
+  copy when it subscribes; the request headers go in a mode 0600 config
+  file, so nothing derived from the cookies shows in the process list.
+  Cookie values are never logged or shown.  =M-x yt-logout= deletes the
+  files; signing out of YouTube in the profile ends the session itself.
+- *Local data:* a mode 0600 SQLite file next to the cookies holds the
+  videos you played, watched marks and resume positions, and also your
+  subscriptions, cached feeds, saved playlists and muted channels.  Only a
+  fixed set of video fields is stored, never yt-dlp's raw output, which
+  holds stream URLs signed for your IP address; those are kept in memory
+  only, for mpv, until shortly before they expire, and forgotten on
+  =yt-logout=.  =M-x yt-forget-history= forgets the played videos, watched
+  marks and positions in that file.  It does not touch:
+  - the backups yt keeps next to it, before a change of its format and on
+    =M-x yt-cache-backup=: up to three =yt.sqlite.backup-…= files, mode
+    0600;
+  - a damaged cache that yt set aside, =yt.sqlite.damaged-…=, mode 0600;
+  - the thumbnail cache in =~/.cache/yt/thumbs/=, named by video id.
+  Delete those yourself to forget everything.
 - *Logs:* =*yt-log*= lists the commands yt runs and how long playing took,
   by video id, with search queries replaced by =REDACTED=, stream URLs by
-  =<stream URL>= and authorization headers and cookies by =<redacted>=; it
-  keeps the last 300 000 characters.  While a search runs, its query is
-  visible to other local users in the process list.  =yt-doctor= shows no
-  cookies, tokens or titles, but its file names show your user name.
+  =<stream URL>= and authorization headers and cookies by =<redacted>=.
+  While a search runs, its query is visible to other local users in the
+  process list.  =yt-doctor= shows no cookies, tokens or titles, but its
+  file names show your user name.
 - *Prompts:* searches, filters and URLs typed at yt's prompts have their
   own histories, which =savehist-mode= does not save unless
   =yt-save-minibuffer-history= is set.
 - *mpv:* its control socket, which accepts any mpv command, is in the mode
   0700 runtime directory; yt never falls back to a shared directory.  With
   =programs.yt.mpris=, mpv publishes the title, position and length of the
-  video playing on the session D-Bus, for every program of your session;
-  yt's copy of the MPRIS script leaves out the stream URL.
+  video playing on the session D-Bus, for every program of your session,
+  which can also control it.  yt's copy of the MPRIS script leaves out the
+  stream URL; other mpv scripts you install still see it, since yt's mpv
+  loads your mpv configuration.
+- *yt-remote:* it talks only to the Emacs server, and never starts one.
+  yt's replies, which can name the video, show as desktop notifications,
+  which your notification daemon may keep in its history.
+
+* Troubleshooting
+- *Signing in fails:* =M-x yt-doctor= shows what yt found: programs and
+  versions, the display, directories, the cache and the sign-in state.
+  =C-u M-x yt-login= chooses another Chromium profile.
+- *The session expired:* yt exports the cookies again by itself, once.  If
+  that does not help, sign in to YouTube in the profile again, then run
+  =M-x yt-login=.
+- *YouTube asks you to confirm you are not a bot:* yt pauses its requests
+  for 15 minutes, and the header line says until when.  Open YouTube in the
+  profile, then run =M-x yt-login= to end the pause.
+- *Fetching or playing suddenly fails:* update yt-dlp, which has to keep up
+  with YouTube; =yt-doctor= says when it is old.  "n challenge solving
+  failed" means yt-dlp found no JavaScript runtime.
+- *A video does not play:* =C-c y != shows the log of playback problems.
 
 * Known limitations
 - The subscription feed has no exact upload times, only YouTube's "3 hours
@@ -356,64 +453,29 @@ on the display of the selected frame.
   that YouTube moves in the feed can be missed until =G=.
 - VLC is not controlled: it marks a video as watched when it starts, and
   cannot queue.
-- mpv needs yt to resolve every stream first, which takes a few seconds:
-  YouTube releases streams only a few seconds after yt-dlp asks for them.
-  yt keeps the resolved streams in memory, so playing or resuming a video
-  again within a few hours starts at once.
-- Stream URLs expire after some hours; a queued video that fails is
-  resolved again, once.
-- Subscribing uses YouTube's internal API, which is not documented, the
-  way the website's Subscribe button does; it can break when YouTube
-  changes, independently of yt-dlp.  Then the Chromium fallback still
-  works.
-- Everything depends on yt-dlp keeping up with YouTube: update it when
-  =yt-doctor= says it is old, or when fetching suddenly fails.
+- mpv starts a few seconds after =RET=: yt fetches the streams first, and
+  YouTube releases them only some seconds after yt-dlp asks.  yt keeps the
+  streams in memory, so playing or resuming a video again within a few
+  hours starts at once.
+- Stream URLs expire after some hours; a queued video that fails is fetched
+  again, once.
+- Subscribing sends the same request as the website's Subscribe button, to
+  an API that is not documented.  If YouTube changes it, subscribe in the
+  Chromium profile instead.
+
+What was deferred or cut is listed in [[file:docs/history/IMPROVEMENT-PLAN.md][docs/history/IMPROVEMENT-PLAN.md]].
 
 * Development
-All builds and tests use the Emacs from this flake, not the Emacs installed
-on the host, and run with =HOME= and the XDG directories in a temporary
-directory, so they cannot touch real cookies, caches or customizations.
-yt-dlp, the cookie exporter, mpv, VLC and curl are replaced by scripted
-fakes in =test/bin=; the tests use no network.
+All builds and tests use the Emacs from this flake, never the host's, and
+need no network:
 
 #+begin_src sh
-nix develop            # shell with the test Emacs, mpv, yt-dlp, vlc, jq, curl
-make all               # compile, checkdoc, lint, test (inside nix develop)
-make test SELECTOR='"yt-feed-.*"'   # run a subset of the tests
-nix run .#test         # same as `make test`, without entering the shell
-nix run .#test -- lint # any make target
-nix flake check        # every check, plus the tests with compiled code
-YT_LIVE=1 nix run .#smoke  # a few checks against the real YouTube
+nix develop   # a shell with the test Emacs, mpv, yt-dlp, VLC, jq and curl
+make all      # compile, load-check, checkdoc, lint, test
 #+end_src
 
-=make= refuses to run unless =YT_EMACS= points at the flake's Emacs.
-=nix run .#smoke= is the only thing that talks to YouTube: with the
-sandbox's sign-in, it checks the yt-dlp version, the session, five feed
-entries and the fields yt reads from them, resolving one stream and
-SponsorBlock, printing counts only.  It changes nothing in the account and
-refuses to run without =YT_LIVE=1= or under CI.
-
-** Sandbox Emacs
-#+begin_src sh
-nix run .#sandbox
-#+end_src
-
-This opens a GUI Emacs that is separate from the host Emacs and its daemon:
-default Emacs plus yt.  It starts with =-q --no-site-file=, so it reads none of
-the host's config (=~/.emacs.d=, =~/.emacs=, =default.el=, the Nix profiles'
-=site-lisp=).  Its only config is [[file:sandbox/init.el][sandbox/init.el]], which loads yt from the
-working tree with generated autoloads and binds =C-c y= to =yt-map=.
-
-Emacs keeps its own files in =.sandbox/emacs.d=.  yt keeps its state (the
-sandbox's cookies included), cache and runtime files in the =yt-sandbox=
-directories of =$XDG_STATE_HOME=, =$XDG_CACHE_HOME= and =$XDG_RUNTIME_DIR=:
-outside the checkout, so that no build, archive or search of the
-repository picks up the cookies; the sandbox refuses to start on the host
-yt's state.  The flake's mpv, yt-dlp, vlc, curl and
-=yt-export-cookies= come first on =PATH=.
-
-The design, the milestones and what was verified along the way are in
-[[file:docs/PLAN.md][docs/PLAN.md]] and [[file:docs/spike.md][docs/spike.md]].
+[[file:docs/DEVELOPMENT.md][docs/DEVELOPMENT.md]] covers the tests, the sandbox Emacs, the smoke test
+against the real YouTube, and the modules.
 
 * Prior art
 empv and mpv.el, whose handling of mpv's IPC informed yt's mpv backend.
