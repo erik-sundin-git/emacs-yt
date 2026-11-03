@@ -156,7 +156,7 @@ Google session, and its cookies would be stored in a file; use it anyway? ")))
     (cond
      ((eq (plist-get err :type) 'missing)
       (list :class 'missing
-            :message (format "%s not found: start Emacs with `nix run .#sandbox', or install the yt flake's runtime package"
+            :message (format "%s not found: install it (see Installation in yt's README), or set `yt-export-cookies-program'"
                              yt-export-cookies-program)))
      ((string-match-p "could not find [a-z]+ cookies database" problem)
       (list :class 'bad-profile

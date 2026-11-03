@@ -21,14 +21,21 @@
         ) ./.) ./test;
       };
 
-      # yt as an Emacs package, for the emacsPackages set EPKGS.
+      # yt as an Emacs package, for the emacsPackages set EPKGS.  The
+      # cookie exporter is found by its store path, not on PATH, which an
+      # Emacs daemon started by systemd may not have.
       mkYt =
-        epkgs:
+        pkgs: epkgs:
         epkgs.trivialBuild {
           pname = "yt";
           version = "0.1.0";
           src = ytSrc;
           turnCompilationWarningToError = true;
+          postPatch = ''
+            substituteInPlace yt.el --replace-fail \
+              '(defcustom yt-export-cookies-program "yt-export-cookies"' \
+              '(defcustom yt-export-cookies-program "${mkExporter pkgs}/bin/yt-export-cookies"'
+          '';
           # Install the way package.el would, with autoloads, so that Emacs
           # activates yt at startup and M-x yt works without a require.
           installPhase = ''
@@ -88,7 +95,7 @@
           yt-export-cookies = mkExporter pkgs;
           runtime = mkRuntime pkgs;
           # yt, byte-compiled with the Emacs of the test setup.
-          default = mkYt (pkgs.emacsPackagesFor pkgs.emacs30-pgtk);
+          default = mkYt pkgs (pkgs.emacsPackagesFor pkgs.emacs30-pgtk);
         }
       );
 
@@ -233,7 +240,7 @@
       # pkgs.emacs), yt-export-cookies and yt-runtime.
       overlays.default = final: prev: {
         emacsPackagesFor =
-          emacs: (prev.emacsPackagesFor emacs).overrideScope (efinal: _: { yt = mkYt efinal; });
+          emacs: (prev.emacsPackagesFor emacs).overrideScope (efinal: _: { yt = mkYt final efinal; });
         yt-el = (final.emacsPackagesFor final.emacs).yt;
         yt-export-cookies = mkExporter final;
         yt-runtime = mkRuntime final;
@@ -257,6 +264,12 @@
           options.programs.yt = {
             enable = lib.mkEnableOption "the programs yt runs: mpv and yt-export-cookies";
             installElisp = lib.mkEnableOption "yt in `programs.emacs.extraPackages`";
+            swayWindowRule = lib.mkEnableOption "a sway rule for mpv's window (app id emacs-yt)";
+            swayWindowCommand = lib.mkOption {
+              type = lib.types.str;
+              default = "floating enable, sticky enable, resize set 960 540";
+              description = "The sway command run on mpv's window when `swayWindowRule` is on.";
+            };
           };
           config = lib.mkIf cfg.enable (
             lib.mkMerge [
@@ -265,7 +278,15 @@
                 home.packages = [ (mkExporter pkgs) ];
               }
               (lib.mkIf cfg.installElisp {
-                programs.emacs.extraPackages = epkgs: [ (mkYt epkgs) ];
+                programs.emacs.extraPackages = epkgs: [ (mkYt pkgs epkgs) ];
+              })
+              (lib.mkIf cfg.swayWindowRule {
+                wayland.windowManager.sway.config.window.commands = [
+                  {
+                    criteria.app_id = "^emacs-yt$";
+                    command = cfg.swayWindowCommand;
+                  }
+                ];
               })
             ]
           );

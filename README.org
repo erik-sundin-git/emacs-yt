@@ -39,6 +39,7 @@ emacs-yt = {
 imports = [ inputs.emacs-yt.homeModules.default ];
 programs.yt.enable = true;        # mpv and yt-export-cookies
 programs.yt.installElisp = true;  # yt in programs.emacs.extraPackages
+programs.yt.swayWindowRule = true;  # optional: float mpv's window in sway
 #+end_src
 
 The module does not set =nixpkgs.overlays=, so it works with
@@ -189,7 +190,8 @@ managers can place it.  For sway, for example:
 for_window [app_id="^emacs-yt$"] floating enable, sticky enable, resize set 960 540
 #+end_src
 
-or, in a NixOS/Home Manager sway configuration:
+or, with the Home Manager module, =programs.yt.swayWindowRule = true;= (and
+=programs.yt.swayWindowCommand= to change the command), which adds:
 
 #+begin_src nix
 { criteria.app_id = "^emacs-yt$"; command = "floating enable, sticky enable, resize set 960 540"; }

@@ -2,6 +2,10 @@
 
 * Unreleased
 ** After M7
+- Nix: the packaged yt finds =yt-export-cookies= by its store path, so an
+  Emacs daemon started without it on =PATH= can still sign in.  The Home
+  Manager module gains =programs.yt.swayWindowRule= (and
+  =swayWindowCommand=) for mpv's window.
 - An empty feed says which filters hide its videos and the key that shows
   them again ("hiding watched videos (t w shows them)"); it used to say
   "Press C" even when only a toggle hid them, which =C= does not clear.
