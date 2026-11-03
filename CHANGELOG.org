@@ -1,6 +1,11 @@
 #+title: yt changelog
 
 * Unreleased
+- The sandbox keeps yt's state, cookies included, in
+  =$XDG_STATE_HOME/yt-sandbox= (and its cache in =$XDG_CACHE_HOME=), not in
+  =.sandbox/= inside the checkout, where =nix build path:.= or an archive
+  of the repository would have picked them up.  It says how to move an
+  old =.sandbox/state=, and refuses to run on the host yt's state.
 - Privacy of logs and prompts:
   - =*yt-log*= redacts authorization hashes and cookie or authorization
     headers as well as stream URLs, whatever logs them, and keeps a

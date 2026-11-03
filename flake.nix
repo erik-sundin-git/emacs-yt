@@ -182,11 +182,22 @@
               # See the dev shell: a host LD_LIBRARY_PATH breaks the flake's mpv.
               unset LD_LIBRARY_PATH
               sb="$repo/.sandbox"
-              mkdir -p "$sb/emacs.d" "$sb/state" "$sb/cache"
-              chmod 0700 "$sb/state" "$sb/cache"
+              # yt's state, the cookies included, lives outside the checkout,
+              # where no build, archive or indexer of the repository finds it.
+              real_state="''${XDG_STATE_HOME:-$HOME/.local/state}"
+              state="$real_state/yt-sandbox"
+              cache="''${XDG_CACHE_HOME:-$HOME/.cache}/yt-sandbox"
+              mkdir -p "$sb/emacs.d" "$state" "$cache"
+              chmod 0700 "$state" "$cache"
+              if [ -d "$sb/state" ]; then
+                echo "yt-sandbox: its state moved out of the checkout, to $state." >&2
+                echo "  To keep the sandbox signed in: mv '$sb/state/yt' '$state/'" >&2
+                echo "  Then delete '$sb/state' and '$sb/cache'." >&2
+              fi
               # Only state and cache are redirected: XDG_CONFIG_HOME must stay
               # real so the Chromium profile can be found.
-              export XDG_STATE_HOME="$sb/state" XDG_CACHE_HOME="$sb/cache"
+              export XDG_STATE_HOME="$state" XDG_CACHE_HOME="$cache"
+              export YT_SANDBOX_REAL_STATE="$real_state/yt"
               export YT_SANDBOX_REPO="$repo"
               export YT_SANDBOX_RUNTIME_DIR="$XDG_RUNTIME_DIR/yt-sandbox"
               # Default Emacs plus yt: -q and --no-site-file skip every host

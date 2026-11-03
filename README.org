@@ -334,9 +334,12 @@ the host's config (=~/.emacs.d=, =~/.emacs=, =default.el=, the Nix profiles'
 =site-lisp=).  Its only config is [[file:sandbox/init.el][sandbox/init.el]], which loads yt from the
 working tree with generated autoloads and binds =C-c y= to =yt-map=.
 
-Emacs keeps its own files in =.sandbox/emacs.d=, and yt its state, cache and
-runtime files in =.sandbox/state=, =.sandbox/cache= and
-=$XDG_RUNTIME_DIR/yt-sandbox=.  The flake's mpv, yt-dlp, vlc, curl and
+Emacs keeps its own files in =.sandbox/emacs.d=.  yt keeps its state (the
+sandbox's cookies included), cache and runtime files in the =yt-sandbox=
+directories of =$XDG_STATE_HOME=, =$XDG_CACHE_HOME= and =$XDG_RUNTIME_DIR=:
+outside the checkout, so that no build, archive or search of the
+repository picks up the cookies; the sandbox refuses to start on the host
+yt's state.  The flake's mpv, yt-dlp, vlc, curl and
 =yt-export-cookies= come first on =PATH=.
 
 The design, the milestones and what was verified along the way are in
