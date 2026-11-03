@@ -27,6 +27,10 @@ Effort: S (under half a day), M (a day or two), L (more).
   the faces, the filter syntax and the empty messages), so the package
   is at about 8,400 lines.  Found on the way: the snapshots depended on
   the locale's quoting style.
+- **M11: done** (2026-11-03), 3693f11 to 001a253: backups before
+  migrations and on request, min_reader for rollbacks, a damaged cache
+  set aside, unreadable rows skipped, secure_delete with a WAL
+  checkpoint after forgetting, counts in one query.  Next: M14.
 
 ## Guiding decisions
 
