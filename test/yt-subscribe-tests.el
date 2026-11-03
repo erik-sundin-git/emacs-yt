@@ -111,6 +111,7 @@ With SUBSCRIBED `yes' or `no', the response confirms that state."
         (setq yt-feed--source (list 'channel yt-subscribe-test--id
                                     (format "https://www.youtube.com/channel/%s" yt-subscribe-test--id)
                                     "Channel 2"))
+        (yt-feed--redisplay)
         (should (string-match-p "+ subscribes" (yt-feed--header-line)))
         (cl-letf (((symbol-function 'yt-subscribe--offer-browser)
                    (lambda (&rest args) (ert-fail (list "Offered the browser" args)))))

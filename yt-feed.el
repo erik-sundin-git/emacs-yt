@@ -407,6 +407,7 @@ Return nil if no filter is on."
 The row at point in each window showing the buffer, and the number
 of lines above it in the window, are restored.  A row that was
 filtered out is replaced by its nearest neighbour."
+  (yt-feed--update-kept)
   (let* ((old-ids (yt-feed--printed-ids))
          (point-id (tabulated-list-get-id))
          (windows (mapcar (lambda (window)
@@ -477,6 +478,7 @@ the channel's videos are older than those already cached."
           (yt-feed--redisplay)))))
   (dolist (buffer (yt-feed--buffers))
     (with-current-buffer buffer
+      (yt-feed--update-kept)
       (force-mode-line-update))))
 
 (defun yt-feed--auth-changed ()
@@ -505,6 +507,23 @@ Stop the timer when no feed buffer is left."
   "<header-line> <mouse-1>" #'yt-login
   "<header-line> <mouse-2>" #'yt-login)
 
+(defvar-local yt-feed--kept nil
+  "Whether this buffer's playlist is saved or its channel subscribed.
+One of `saved', `not-saved', `subscribed', `not-subscribed', or nil
+when there is nothing to say.  The header line reads it, so that
+redisplay does not query the cache; `yt-feed--update-kept' sets it.")
+
+(defun yt-feed--update-kept ()
+  "Set `yt-feed--kept' from the cache."
+  (setq yt-feed--kept
+        (pcase yt-feed--source
+          (`(playlist ,id . ,_)
+           (if (yt-cache-playlist-saved-p id) 'saved 'not-saved))
+          (`(channel ,id . ,_)
+           ;; Known only once the channel list was fetched.
+           (when (yt-cache-meta "refreshed:channels")
+             (if (yt-cache-subscribed-p id) 'subscribed 'not-subscribed))))))
+
 (defun yt-feed--header-line ()
   "Return the header line of a feed buffer."
   (let* ((state (yt-auth-state))
@@ -520,17 +539,13 @@ Stop the timer when no feed buffer is left."
                             'help-echo "mouse-1: sign in to YouTube"))
            (when-let* ((paused (yt-auth-backoff-description)))
              (propertize paused 'face 'warning))
-           (pcase yt-feed--source
-             (`(playlist ,id . ,_)
-              (if (yt-cache-playlist-saved-p id)
-                  (propertize "saved playlist" 'face 'success)
-                (substitute-command-keys "\\<yt-feed-mode-map>\\[yt-feed-add] saves this playlist")))
-             (`(channel ,id . ,_)
-              ;; Known only once the channel list was fetched.
-              (when (yt-cache-meta "refreshed:channels")
-                (if (yt-cache-subscribed-p id)
-                    (propertize "subscribed" 'face 'success)
-                  (substitute-command-keys "\\<yt-feed-mode-map>\\[yt-feed-add] subscribes")))))
+           (pcase yt-feed--kept
+             ('saved (propertize "saved playlist" 'face 'success))
+             ('not-saved (substitute-command-keys
+                          "\\<yt-feed-mode-map>\\[yt-feed-add] saves this playlist"))
+             ('subscribed (propertize "subscribed" 'face 'success))
+             ('not-subscribed (substitute-command-keys
+                               "\\<yt-feed-mode-map>\\[yt-feed-add] subscribes")))
            (cond (yt-feed--status (propertize yt-feed--status 'face 'shadow))
                  (yt-feed--error (propertize yt-feed--error 'face 'warning)))
            (if yt-feed--refreshed-at
@@ -1069,6 +1084,7 @@ this buffer shows, or the channel at point in the channels list."
   (interactive nil yt-feed-mode)
   (let ((playlist (yt-feed--playlist)))
     (yt-cache-save-playlist playlist)
+    (yt-feed--update-kept)
     (force-mode-line-update)
     (message "Saved the playlist “%s”" (plist-get playlist :title))))
 
@@ -1077,6 +1093,7 @@ this buffer shows, or the channel at point in the channels list."
   (interactive nil yt-feed-mode)
   (let ((playlist (yt-feed--playlist)))
     (yt-cache-forget-playlist (plist-get playlist :id))
+    (yt-feed--update-kept)
     (force-mode-line-update)
     (message "Removed the playlist “%s” from the saved playlists"
              (plist-get playlist :title))))
