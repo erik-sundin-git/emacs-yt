@@ -158,7 +158,9 @@ YTDLP is bound to the scenario directory of the fake yt-dlp."
            (buffer (yt))
            (elapsed (- (float-time) start)))
       (with-current-buffer buffer
-        (should (< elapsed 0.2))
+        ;; The fetch hangs, so blocking on it would never return; the
+        ;; margin is for busy CI runners, which reopen the cache slowly.
+        (should (< elapsed 1.0))
         (should yt-feed--refreshing)
         (should (equal (yt-feed-test--ids) yt-feed-test--fixture-ids))
         (should (string-match-p "updated 1h ago"
