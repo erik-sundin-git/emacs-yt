@@ -5,8 +5,10 @@
   videos leave the subscription feed, =t m= shows them again, and =x=
   unmutes.  Its own uploads still show everything.  Muted channels are
   marked in the channels list.  The cache is now schema version 5, with
-  a =channel_prefs= table; yt backs it up first, and the version before
-  still opens it.
+  a =channel_prefs= table.  yt backs the cache up first.  A yt from
+  before the backups (0.3.0 and older) refuses a version 5 cache: after
+  rolling back that far, restore the newest =yt.sqlite.backup-…= over
+  =yt.sqlite=.
 - The cache is safer to keep:
   - Before yt changes the cache's format, it writes a copy next to it
     (=yt.sqlite.backup-…=, the newest three kept); =M-x yt-cache-backup=
