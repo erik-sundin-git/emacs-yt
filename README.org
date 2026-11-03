@@ -249,7 +249,9 @@ on the display of the selected frame.
   are in a mode 0600 SQLite file next to the cookies;
   =M-x yt-forget-history= clears them all.
   Only a fixed set of video fields is stored, never yt-dlp's raw output,
-  which holds stream URLs signed for your IP address.
+  which holds stream URLs signed for your IP address.  Those are kept in
+  memory only, for mpv, until shortly before they expire, and forgotten
+  on =yt-logout=.
 - *Logs:* =*yt-log*= lists the commands yt runs, with search queries
   replaced by =REDACTED= and stream URLs by =<stream URL>=.  While a search
   runs, its query is visible to other local users in the process list.
@@ -266,6 +268,8 @@ on the display of the selected frame.
   cannot queue.
 - mpv needs yt to resolve every stream first, which takes a few seconds:
   YouTube releases streams only a few seconds after yt-dlp asks for them.
+  yt keeps the resolved streams in memory, so playing or resuming a video
+  again within a few hours starts at once.
 - Stream URLs expire after some hours; a queued video that fails is
   resolved again, once.
 - Subscribing uses YouTube's internal API, which is not documented, the

@@ -167,6 +167,68 @@ directory of the fake yt-dlp and to the fake VLC's directory."
       (should (equal (plist-get result :message) "This video is age-restricted"))
       (should (= (yt-test-calls ytdlp) 1)))))
 
+(defun yt-player-test--resolve-json (expires &rest overrides)
+  "Return a resolve JSON whose stream URL expires at EXPIRES, with OVERRIDES."
+  (let ((info (yt-process-parse-json (yt-test-fixture-string "resolve-combined.json"))))
+    (setq info (plist-put info :url (format "https://rr1---fake.googlevideo.com/videoplayback?itag=18&%s=%d"
+                                            "expire" expires)))
+    (while overrides
+      (setq info (plist-put info (pop overrides) (pop overrides))))
+    (json-serialize info)))
+
+(defun yt-player-test--resolve (video &optional cache)
+  "Resolve VIDEO with CACHE and wait; return the streams."
+  (let (result)
+    (yt-player-resolve video (lambda (streams _info) (setq result streams))
+                       (lambda (err) (setq result (list :error err)))
+                       :cache cache)
+    (yt-test-wait-until (lambda () result) "resolve")
+    result))
+
+(ert-deftest yt-player-keeps-streams-until-they-expire ()
+  "Resolved streams are reused until shortly before they expire."
+  (yt-test-with-scenario (ytdlp _)
+    (yt-test-install-cookies)
+    (let* ((now 1793500000.0)
+           (yt--now-function (lambda () now))
+           (video (yt-video--make :id "fakevideo03"
+                                  :url "https://www.youtube.com/watch?v=fakevideo03")))
+      (dotimes (n 4)
+        (yt-test-step ytdlp (1+ n) :out (yt-player-test--resolve-json (+ now 21600))))
+      (let ((first (yt-player-test--resolve video t)))
+        (should (equal (yt-player-test--resolve video t) first))
+        (should (= (yt-test-calls ytdlp) 1))
+        ;; Without :cache, as for VLC, yt-dlp runs again.
+        (yt-player-test--resolve video)
+        (should (= (yt-test-calls ytdlp) 2))
+        ;; Close to the expiry: resolved again.
+        (setq now (+ now 21600 (- yt-player-stream-cache-margin) 1))
+        (yt-player-test--resolve video t)
+        (should (= (yt-test-calls ytdlp) 3))
+        ;; New cookies: resolved again.
+        (cl-incf yt-auth--generation)
+        (yt-player-test--resolve video t)
+        (should (= (yt-test-calls ytdlp) 4))
+        ;; Forgotten, as after a failure.
+        (yt-player-forget-streams video)
+        (should-not (yt-player--kept-streams video yt-player-format))))))
+
+(ert-deftest yt-player-keeps-no-live-streams ()
+  "Live streams and URLs without an expiry are never kept."
+  (yt-test-with-scenario (ytdlp _)
+    (yt-test-install-cookies)
+    (let ((video (yt-video--make :id "fakevideo03"
+                                 :url "https://www.youtube.com/watch?v=fakevideo03")))
+      (yt-test-step ytdlp 1 :out (yt-player-test--resolve-json (+ (float-time) 21600)
+                                                               :live_status "is_live"))
+      (yt-test-step ytdlp 2 :out (yt-test-fixture-string "resolve-combined.json"))
+      (yt-test-step ytdlp 3 :out (yt-test-fixture-string "resolve-combined.json"))
+      (yt-player-test--resolve video t)
+      (yt-player-test--resolve video t)
+      (yt-player-test--resolve video t)
+      (should (= (yt-test-calls ytdlp) 3))
+      (should (zerop (hash-table-count yt-player--streams))))))
+
 (ert-deftest yt-player-waits-for-release ()
   "The player starts only after the streams' release time."
   (let ((yt-player-available-margin 0.0)

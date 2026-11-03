@@ -257,6 +257,7 @@ sign-in state, the cache and the feed buffers are reset."
             (yt-feed--fully-refreshed nil)
             (yt-watched-changed-functions nil)
             (yt-auth-state-change-hook nil)
+            (yt-player--streams (make-hash-table :test #'equal))
             (yt-sponsorblock--segments (make-hash-table :test #'equal))
             (yt-sponsorblock--waiting (make-hash-table :test #'equal))
             (process-environment

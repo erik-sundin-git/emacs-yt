@@ -1,6 +1,9 @@
 #+title: yt changelog
 
 * Unreleased
+- Playing or resuming a video again in mpv within a few hours starts at
+  once: the resolved streams are kept in memory until shortly before
+  they expire (never for live streams, never on disk).
 - =W= in a feed marks every unwatched video shown as watched, after
   confirmation; =u= right after undoes it.
 - The subscription feed marks with ◆ the videos that arrived since your

@@ -488,6 +488,8 @@ URLs expire after some hours, which breaks queued entries."
         (pos (and (not (yt-mpv--entry-live-p entry)) (yt-mpv--entry-pos entry)))
         (instance yt-mpv--instance))
     (message "Playing “%s” failed; resolving it again..." (yt-player--title video))
+    ;; Its kept streams may be the ones that failed.
+    (yt-player-forget-streams video)
     (yt-player-resolve
      video
      (lambda (streams _info)

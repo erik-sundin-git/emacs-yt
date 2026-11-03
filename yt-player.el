@@ -29,8 +29,11 @@
 ;; then waits until YouTube releases the streams: yt-dlp reports an
 ;; "available_at" time a few seconds ahead, and fetching a stream
 ;; earlier fails with HTTP 403.  Only then does the backend get the
-;; URLs.  The URLs are signed for the user's IP address and expire, so
-;; they are never cached or logged.
+;; URLs.  The URLs are signed for the user's IP address and expire:
+;; they are never logged or written to disk.  For mpv, which resolves a
+;; video again when its stream fails, they are kept in memory until
+;; shortly before they expire, so that playing a video again starts
+;; at once (`yt-player-resolve' with :cache).
 
 ;;; Code:
 
@@ -176,32 +179,104 @@ Stream URLs are left out."
 
 ;;;; Resolving streams
 
+(defvar yt-player-stream-cache-margin 600
+  "Seconds before their expiry that kept streams are resolved again.")
+
+(defvar yt-player--streams (make-hash-table :test #'equal)
+  "Resolved streams kept in memory, by (ID FORMAT COOKIE-GENERATION).
+Each value is (EXPIRES . STREAMS).")
+
+(defun yt-player--streams-expire (streams)
+  "Return when the URLs of STREAMS expire, or nil if they do not say."
+  (let ((times (delq nil (mapcar (lambda (url)
+                                   (and (stringp url)
+                                        (string-match "[?&/]expire[=/]\\([0-9]+\\)" url)
+                                        (string-to-number (match-string 1 url))))
+                                 (list (plist-get streams :video)
+                                       (plist-get streams :audio))))))
+    (and times (apply #'min times))))
+
+(defun yt-player--streams-key (video format)
+  "Return the key of the kept streams of VIDEO in FORMAT."
+  (list (yt-video-id video) format yt-auth--generation))
+
+(defun yt-player--kept-streams (video format)
+  "Return the kept streams of VIDEO in FORMAT, if still good, else nil."
+  (when-let* ((id (yt-video-id video))
+              (kept (gethash (yt-player--streams-key video format) yt-player--streams)))
+    (if (< (yt--now) (- (car kept) yt-player-stream-cache-margin))
+        (cdr kept)
+      (remhash (yt-player--streams-key video format) yt-player--streams)
+      nil)))
+
+(defun yt-player--keep-streams (video format streams)
+  "Keep STREAMS of VIDEO in FORMAT, unless live or without an expiry."
+  (when-let* (((yt-video-id video))
+              ((not (plist-get streams :live)))
+              ((not (memq (yt-video-live-status video) '(is_live is_upcoming))))
+              (expires (yt-player--streams-expire streams)))
+    (puthash (yt-player--streams-key video format) (cons expires streams)
+             yt-player--streams)))
+
+(defun yt-player-forget-streams (&optional video)
+  "Forget the kept streams of VIDEO, or of every video."
+  (if (not video)
+      (clrhash yt-player--streams)
+    (let ((id (yt-video-id video)))
+      (maphash (lambda (key _)
+                 (when (equal (car key) id)
+                   (remhash key yt-player--streams)))
+               yt-player--streams))))
+
+(defun yt-player--auth-changed ()
+  "Forget the kept streams when the cookies are deleted."
+  (when (eq (yt-auth-state) 'no-cookies)
+    (yt-player-forget-streams)))
+
+(add-hook 'yt-auth-state-change-hook #'yt-player--auth-changed)
+
 (defun yt-player--title (video)
   "Return a short name for VIDEO, for messages."
   (or (yt-video-title video) (yt-video-id video)))
 
-(cl-defun yt-player-resolve (video callback on-error &key format (key '(yt-player . resolve)))
+(cl-defun yt-player-resolve (video callback on-error
+                                   &key format (key '(yt-player . resolve)) cache)
   "Resolve the streams of VIDEO and call CALLBACK with them.
 CALLBACK gets the streams plist of `yt-ytdlp-parse-streams' and the
-yt-dlp JSON.  ON-ERROR gets the error plist of `yt-auth-run'.  FORMAT
-defaults to `yt-player-format'; if it is not available, the streams
-are resolved once more with format \"b\".  A new call with the same
-KEY cancels a running one, whose ON-ERROR then gets :type `cancelled'."
-  (let ((format (or format yt-player-format)))
-    (yt-auth-run
-     (yt-ytdlp-resolve-args format (yt-video-url video))
-     :key key :force t :parse 'json
-     :on-success
-     (lambda (info _info)
-       (if-let* ((streams (yt-ytdlp-parse-streams info)))
-           (funcall callback streams info)
-         (funcall on-error (list :type 'parse :class 'parse
-                                 :message "yt-dlp found no stream to play"))))
-     :on-error
-     (lambda (err)
-       (if (and (eq (plist-get err :class) 'format) (not (equal format "b")))
-           (yt-player-resolve video callback on-error :format "b" :key key)
-         (funcall on-error err))))))
+yt-dlp JSON, or nil for kept streams.  ON-ERROR gets the error plist
+of `yt-auth-run'.  FORMAT defaults to `yt-player-format'; if it is not
+available, the streams are resolved once more with format \"b\".  A
+new call with the same KEY cancels a running one, whose ON-ERROR then
+gets :type `cancelled'.  With CACHE non-nil, streams resolved before
+and not about to expire are used, and new ones are kept."
+  (let* ((format (or format yt-player-format))
+         (kept (and cache (yt-player--kept-streams video format))))
+    (if kept
+        (progn
+          (yt-process-cancel key)
+          (yt-process-log "Using the kept streams of %s" (yt-video-id video))
+          (yt-process-deliver callback kept nil))
+      (yt-player--resolve video callback on-error format key cache))))
+
+(defun yt-player--resolve (video callback on-error format key cache)
+  "Resolve VIDEO in FORMAT for `yt-player-resolve', which see."
+  (yt-auth-run
+   (yt-ytdlp-resolve-args format (yt-video-url video))
+   :key key :force t :parse 'json
+   :on-success
+   (lambda (info _info)
+     (if-let* ((streams (yt-ytdlp-parse-streams info)))
+         (progn
+           (when cache
+             (yt-player--keep-streams video format streams))
+           (funcall callback streams info))
+       (funcall on-error (list :type 'parse :class 'parse
+                               :message "yt-dlp found no stream to play"))))
+   :on-error
+   (lambda (err)
+     (if (and (eq (plist-get err :class) 'format) (not (equal format "b")))
+         (yt-player-resolve video callback on-error :format "b" :key key :cache cache)
+       (funcall on-error err)))))
 
 (defun yt-player--when-available (streams fn &optional independent)
   "Call FN from a timer once YouTube releases STREAMS.
@@ -293,7 +368,9 @@ non-nil, to the YouTube history, then run
    (lambda (err)
      (yt-player--failed err)
      (unless (eq (plist-get err :type) 'cancelled)
-       (run-hook-with-args 'yt-player-resolve-failed-functions video)))))
+       (run-hook-with-args 'yt-player-resolve-failed-functions video)))
+   ;; mpv resolves a video again when its streams fail; VLC cannot.
+   :cache (eq backend 'mpv)))
 
 ;;;; Queueing
 
@@ -329,7 +406,7 @@ playlist in the order they were queued."
          (yt-player--failed err)
          (run-hook-with-args 'yt-player-resolve-failed-functions video)
          (yt-player--queue-next))
-       :key '(yt-player . enqueue)))))
+       :key '(yt-player . enqueue) :cache (eq backend 'mpv)))))
 
 (defun yt-player--enqueue (backend videos)
   "Resolve VIDEOS in order and add them to the playlist of BACKEND."
