@@ -22,6 +22,11 @@ Effort: S (under half a day), M (a day or two), L (more).
   load check), and a test that raced on busy CI runners.
 - **M11-M15: not started.**  Reviewed again on 2026-11-03 (see "Second
   review" at the end): reordered to M12, M11, M14, M13, M15.
+- **M12: done** (2026-11-03), ccda6bf to 7cdfdc8, released as 0.3.0.  The
+  shared list base came out line-neutral rather than -150 (it took on
+  the faces, the filter syntax and the empty messages), so the package
+  is at about 8,400 lines.  Found on the way: the snapshots depended on
+  the locale's quoting style.
 
 ## Guiding decisions
 
