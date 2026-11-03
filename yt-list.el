@@ -101,7 +101,7 @@
 (defface yt-feed-arrived-marker '((t :inherit warning))
   "Face for the marker of a video that arrived since your last visit."
   :group 'yt-feed
-  :package-version '(yt . "0.2.0"))
+  :package-version '(yt . "0.3.0"))
 
 
 ;;;; Columns that fit the window

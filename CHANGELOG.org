@@ -1,6 +1,21 @@
 #+title: yt changelog
 
 * Unreleased
+
+* 0.3.0 (2026-11-03)
+** Keys that changed
+- =/= is the filter key in every list; =s= still filters, saying it will
+  stop in 0.4.
+- =j= gives every key of =C-c y= in all yt buffers; =P= (player keys)
+  works in the channels and playlists lists too.
+- =C= clears the filter in the channels, playlists and history lists.
+- =o= opens a playlist; =z= shuffles the queue in its buffer; === repeats.
+- New: =W= (mark the shown videos watched), =A= (play all from here),
+  =t n= (only new since your last visit), =C-c y .= and =C-c y ,=
+  (chapters).
+- mpv's playlist is the queue: =yt-player-queue= on =C-c y l=; the old
+  command names still work.
+** Everything else
 - mpv's playlist is called the queue, so that it is not mistaken for a
   YouTube playlist: =C-c y l= shows =*yt-queue*= (=yt-player-queue=, in
   =yt-queue-mode=), and =C-c y z= is =yt-player-shuffle-queue=.  The old

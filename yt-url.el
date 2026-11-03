@@ -182,7 +182,7 @@ and channels open in yt buffers.  With a prefix argument, a link
 opens in the browser as before."
   :global t
   :group 'yt
-  :package-version '(yt . "0.2.0")
+  :package-version '(yt . "0.3.0")
   (require 'browse-url)
   (setq browse-url-handlers
         (cl-remove #'yt-url-browse browse-url-handlers :key #'cdr))

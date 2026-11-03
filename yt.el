@@ -5,7 +5,7 @@
 ;; Author: Erik Sundin <mail@eriksundin.com>
 ;; Maintainer: Erik Sundin <mail@eriksundin.com>
 ;; URL: https://github.com/erik-sundin-git/emacs-yt
-;; Version: 0.2.0
+;; Version: 0.3.0
 ;; Package-Requires: ((emacs "30.1"))
 ;; Keywords: multimedia
 ;; SPDX-License-Identifier: GPL-3.0-or-later
@@ -193,7 +193,7 @@ keep their own histories for the session only: yt adds them to
 `savehist-ignored-variables'."
   :type 'boolean
   :group 'yt
-  :package-version '(yt . "0.2.0"))
+  :package-version '(yt . "0.3.0"))
 
 (defvar savehist-ignored-variables)
 
