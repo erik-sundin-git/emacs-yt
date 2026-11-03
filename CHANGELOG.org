@@ -1,6 +1,9 @@
 #+title: yt changelog
 
 * Unreleased
+- Org links: with =(with-eval-after-load 'ol (require 'yt-org))=,
+  =org-store-link= in a yt buffer stores a plain YouTube link to the
+  video at point, "Title — Channel", from where it is if it is playing.
 - =M= plays a video's sound alone (audio-only format, picture off), and
   =C-c y M= switches the video playing between audio only and its
   picture, from where it is, in its place in the queue.

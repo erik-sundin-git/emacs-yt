@@ -40,6 +40,10 @@ Effort: S (under half a day), M (a day or two), L (more).
   old entry first, which lets mpv start the next one; it now inserts,
   plays, then removes, and the new entry does not count as a new play.
   Next: M15.
+- **M15: done** (2026-11-03): `yt-org.el`, a store-only "yt" link type
+  storing plain YouTube links.  package-lint rejects an autoloaded
+  `with-eval-after-load`, so the user loads it with `ol`, as org link
+  packages usually ask.  The plan is complete.
 
 ## Guiding decisions
 

@@ -220,6 +220,20 @@ hosts, rebuilds a clean URL from the video, playlist or channel id
 itself to yt-dlp.  With =yt-player-youtube-history= on, a video you open
 from a link is added to your YouTube history like any other you play.
 
+** Org links
+With
+
+#+begin_src emacs-lisp
+(with-eval-after-load 'ol (require 'yt-org))
+#+end_src
+
+=org-store-link= (=C-c l=) in a yt buffer stores a link to the video at
+point, described as "Title — Channel"; if that video is playing, the link
+starts where it is (=&t=N=).  =C-c C-l= in a note inserts it.  The link is
+a plain YouTube URL, so notes do not depend on yt, and with
+=yt-url-handler-mode= on, following it plays the video in yt from that
+time.
+
 * The mpv window
 mpv opens its own window with the Wayland app id =emacs-yt=, so window
 managers can place it.  For sway, for example:

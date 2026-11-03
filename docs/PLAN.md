@@ -56,6 +56,7 @@
 | `yt-sponsorblock.el` | SponsorBlock segments, fetched with curl by hash prefix (after M7). |
 | `yt-subscribe.el` | Subscribing through YouTube's internal API with curl (after M7). |
 | `yt-url.el` | Strict parsing of YouTube links and `yt-url-handler-mode` for `browse-url` (after M7). |
+| `yt-org.el` | `org-store-link` for the video at point, as a plain YouTube link (M15); loaded by the user with org's `ol`. |
 | `yt-thumbs.el` | Thumbnails, downloaded with curl (M7). |
 | `yt-select.el` | `yt-select-video` completing-read (category `yt-video`). Optional marginalia and embark glue, registered through `after-load-functions` (package-lint rejects `with-eval-after-load`). |
 | `yt-doctor.el` | `yt-doctor` diagnostics buffer. |
