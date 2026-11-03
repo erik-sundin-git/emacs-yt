@@ -60,12 +60,23 @@ and :url, and non-nil if you are now subscribed.")
 (defconst yt-cache--schema-version 4
   "Version of the cache schema, stored as SQLite's user_version.")
 
-(defconst yt-cache--fields
-  '(id title channel channel-id channel-url duration timestamp
-       timestamp-approx-p views live-status thumbnail url short-p)
-  "The `yt-video' slots stored in the cache.
+(eval-and-compile
+  (defconst yt-cache--fields
+    '(id title channel channel-id channel-url duration timestamp
+         timestamp-approx-p views live-status thumbnail url short-p)
+    "The `yt-video' slots stored in the cache.
 Local state (watched, position, fetched-at) has its own columns,
-and the feed index its own table.")
+and the feed index its own table."))
+
+(defconst yt-cache--slots
+  (eval-when-compile
+    (mapcar (lambda (field)
+              (list field (intern (format ":%s" field))
+                    (cl-struct-slot-offset 'yt-video field)))
+            yt-cache--fields))
+  "(FIELD KEYWORD OFFSET) for each of `yt-cache--fields'.
+The offsets are computed when this file is compiled, so that reading
+and writing the fields needs neither cl-macs nor a lookup at run time.")
 
 (defun yt-cache-file-name ()
   "Return the name of the cache database file, see `yt-cache-file'."
@@ -149,10 +160,10 @@ Version 2 added the channels table, version 3 the playlists table."
 (defun yt-cache--encode (video)
   "Return the allowlisted fields of VIDEO as a JSON string."
   (let (plist)
-    (dolist (field yt-cache--fields)
-      (let ((value (cl-struct-slot-value 'yt-video field video)))
+    (pcase-dolist (`(,_ ,keyword ,offset) yt-cache--slots)
+      (let ((value (aref video offset)))
         (when value
-          (push (intern (format ":%s" field)) plist)
+          (push keyword plist)
           (push (if (and (symbolp value) (not (eq value t)))
                     (symbol-name value)
                   value)
@@ -165,12 +176,12 @@ FETCHED-AT, WATCHED and POSITION come from the row's own columns."
   (let ((plist (json-parse-string data :object-type 'plist
                                   :null-object nil :false-object nil))
         (video (yt-video--make)))
-    (dolist (field yt-cache--fields)
-      (let ((value (plist-get plist (intern (format ":%s" field)))))
+    (pcase-dolist (`(,field ,keyword ,offset) yt-cache--slots)
+      (let ((value (plist-get plist keyword)))
         (when (and value (memq field '(live-status timestamp-approx-p))
                    (stringp value))
           (setq value (intern value)))
-        (setf (cl-struct-slot-value 'yt-video field video) value)))
+        (aset video offset value)))
     (setf (yt-video-fetched-at video) fetched-at
           (yt-video-watched video) (and watched (/= watched 0))
           (yt-video-position video) position)
@@ -191,10 +202,9 @@ approximate time gets less precise the later it is fetched."
     (setf (yt-video-timestamp new) (yt-video-timestamp old)
           (yt-video-timestamp-approx-p new) (yt-video-timestamp-approx-p old)))
   ;; The approximate flag belongs to the timestamp, decided above.
-  (dolist (field (remq 'timestamp-approx-p yt-cache--fields))
-    (unless (cl-struct-slot-value 'yt-video field new)
-      (setf (cl-struct-slot-value 'yt-video field new)
-            (cl-struct-slot-value 'yt-video field old))))
+  (pcase-dolist (`(,field ,_ ,offset) yt-cache--slots)
+    (unless (or (eq field 'timestamp-approx-p) (aref new offset))
+      (aset new offset (aref old offset))))
   new)
 
 ;;;; Videos
@@ -446,7 +456,6 @@ cache yet are added with only their id.  Run
     (run-hook-with-args 'yt-watched-changed-functions ids (not unwatched))
     ids))
 
-;;;###autoload
 ;;;; Played videos
 
 (defun yt-cache-add-history (video)
@@ -485,6 +494,7 @@ Each element is (VIDEO . PLAYED-AT), PLAYED-AT in seconds since the epoch."
   (sqlite-execute (yt-cache-db) "DELETE FROM history")
   (run-hooks 'yt-history-changed-hook))
 
+;;;###autoload
 (defun yt-forget-history ()
   "Forget the videos you played and watched, and where you stopped."
   (interactive)
