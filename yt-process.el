@@ -80,8 +80,10 @@ Calling from a timer keeps errors in FN out of process sentinels."
 
 (cl-defstruct (yt-process-queue (:constructor yt-process-queue-create (limit))
                                 (:copier nil))
-  "A queue that runs at most LIMIT jobs at once."
-  limit (running 0) (waiting nil))
+  "A queue that runs at most LIMIT jobs at once.
+STARTING is non-nil while the queue starts jobs, so that a job that
+is done at once does not start the next one from inside itself."
+  limit (running 0) (waiting nil) (starting nil))
 
 (defun yt-process-queue-run (queue job)
   "Run JOB through QUEUE, now if fewer than its limit are running.
@@ -92,22 +94,31 @@ call once when it is done, successful or not."
   (yt-process--queue-next queue))
 
 (defun yt-process--queue-next (queue)
-  "Start waiting jobs of QUEUE while it is below its limit."
-  (while (and (yt-process-queue-waiting queue)
-              (< (yt-process-queue-running queue) (yt-process-queue-limit queue)))
-    (let ((job (pop (yt-process-queue-waiting queue)))
-          (done nil))
-      (cl-incf (yt-process-queue-running queue))
-      (funcall job (lambda ()
-                     (unless done
-                       (setq done t)
-                       (cl-decf (yt-process-queue-running queue))
-                       (yt-process--queue-next queue)))))))
+  "Start waiting jobs of QUEUE while it is below its limit.
+A job done at once only frees its place; the loop already running
+starts the next one."
+  (unless (yt-process-queue-starting queue)
+    (setf (yt-process-queue-starting queue) t)
+    (unwind-protect
+        (while (and (yt-process-queue-waiting queue)
+                    (< (yt-process-queue-running queue) (yt-process-queue-limit queue)))
+          (let ((job (pop (yt-process-queue-waiting queue)))
+                (done nil))
+            (cl-incf (yt-process-queue-running queue))
+            (funcall job (lambda ()
+                           (unless done
+                             (setq done t)
+                             (cl-decf (yt-process-queue-running queue))
+                             (yt-process--queue-next queue))))))
+      (setf (yt-process-queue-starting queue) nil))))
 
 (cl-defun yt-process-run (program args &key on-success on-error on-line
                                   (parse 'json) timeout key force env
                                   log-args)
   "Run PROGRAM with ARGS asynchronously and return its process.
+Return non-nil exactly when one of ON-SUCCESS and ON-ERROR will be
+called: t if PROGRAM is missing (ON-ERROR gets :type `missing'), or
+nil, with no callback, if a run with KEY is busy.
 
 PARSE says what to do with standard output:
   `json'    parse it as one JSON document when the program exits;
@@ -159,7 +170,7 @@ the *yt-log* entry, for arguments that should not be logged."
        (yt-process-deliver on-error
                            (list :type 'missing :program program
                                  :message (error-message-string err)))
-       (cl-return-from yt-process-run nil)))
+       (cl-return-from yt-process-run t)))
     (process-put proc 'yt-job job)
     (process-put stderr 'yt-main proc)
     (when key
@@ -258,10 +269,18 @@ If the callback returns `stop', stop JOB and interrupt PROC."
     (let ((job (process-get proc 'yt-job)))
       (setf (yt-process--job-exited job) t)
       (if (yt-process--job-stderr-closed job)
-          (yt-process--finish proc)
+          (yt-process--finish-soon proc)
         (push (run-at-time yt-process-stderr-grace nil
                            #'yt-process--finish proc)
               (yt-process--job-timers job))))))
+
+(defun yt-process--finish-soon (proc)
+  "Finish PROC from a timer, not from the sentinel that noticed it.
+Finishing deletes the standard error pipe, which runs the sentinels of
+other processes that ended meanwhile; from inside a sentinel, those
+would nest, and hundreds of runs ending together overflow
+`max-lisp-eval-depth'."
+  (run-at-time 0 nil #'yt-process--finish proc))
 
 (defun yt-process--stderr-sentinel (stderr _event)
   "Note that the standard error pipe STDERR has closed."
@@ -270,7 +289,7 @@ If the callback returns `stop', stop JOB and interrupt PROC."
                 (job (process-get proc 'yt-job)))
       (setf (yt-process--job-stderr-closed job) t)
       (when (yt-process--job-exited job)
-        (yt-process--finish proc)))))
+        (yt-process--finish-soon proc)))))
 
 (defun yt-process--buffer-text (buffer)
   "Return the text of BUFFER, or nil if it is dead."

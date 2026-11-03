@@ -135,5 +135,41 @@ Lines after a `stop', even in the same chunk, are dropped."
     (should (eq (plist-get err :type) 'cancelled))
     (should-not (yt-process-cancel 'yt-test-cancel))))
 
+(ert-deftest yt-process-queue-of-jobs-that-finish-at-once ()
+  "Jobs that call `done' at once do not nest one call per job."
+  (let ((queue (yt-process-queue-create 1))
+        (ran 0))
+    (dotimes (_ 2000)
+      (yt-process-queue-run queue (lambda (done) (cl-incf ran) (funcall done))))
+    (should (= ran 2000))
+    (should (zerop (yt-process-queue-running queue)))))
+
+(ert-deftest yt-process-many-runs-at-once ()
+  "Hundreds of runs finishing together do not nest their sentinels."
+  (let ((done 0) (failed 0))
+    (dotimes (_ 200)
+      (yt-process-run "sh" '("-c" "echo '{}'")
+                      :on-success (lambda (_ _) (cl-incf done))
+                      :on-error (lambda (_) (cl-incf failed))))
+    (yt-test-wait-until (lambda () (= (+ done failed) 200)) "200 runs")
+    (should (= done 200))))
+
+(ert-deftest yt-process-missing-program-says-a-callback-follows ()
+  "A missing program delivers `on-error' and returns non-nil, so that
+callers do not clean up twice; a busy key returns nil with no callback."
+  (let (errors)
+    (should (yt-process-run "yt-test-no-such-program" nil
+                            :on-error (lambda (err) (push (plist-get err :type) errors))))
+    (yt-test-wait-until (lambda () errors) "missing")
+    (should (equal errors '(missing)))
+    (let ((first (yt-process-run "sleep" '("10") :key 'yt-test-busy :parse nil
+                                 :on-error #'ignore)))
+      (unwind-protect
+          (should-not (yt-process-run "true" nil :key 'yt-test-busy
+                                      :on-success (lambda (&rest _) (push 'called errors))))
+        (yt-process-cancel 'yt-test-busy)
+        (yt-test-wait-until (lambda () (not (process-live-p first))) "cancel")))
+    (should-not (memq 'called errors))))
+
 (provide 'yt-process-tests)
 ;;; yt-process-tests.el ends here

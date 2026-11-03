@@ -148,7 +148,8 @@ session; a failed fetch is tried again next time."
                                          (string-trim (or (plist-get err :stderr)
                                                           (format "%s" (plist-get err :type)))))
                          (yt-sponsorblock--done id nil)))))
-        (yt-sponsorblock--done id nil))))))
+        ;; Busy: no callback will come.  Answer from a timer, as always.
+        (yt-process-deliver #'yt-sponsorblock--done id nil))))))
 
 (defun yt-sponsorblock--response (id output)
   "Return the segments of ID in curl's OUTPUT, `none', or nil on failure."

@@ -1,6 +1,9 @@
 #+title: yt changelog
 
 * Unreleased
+- Many yt-dlp or curl runs ending together no longer overflow
+  =max-lisp-eval-depth= (seen with 150 at once), and a long queue of jobs
+  that finish at once no longer nests one call per job.
 - =yt-url-handler-mode= opens YouTube links in yt: from mail, org or help
   buffers, a video plays in mpv (from its =t== time) and a playlist or
   channel opens in yt; =C-u= still opens the browser.  Links are parsed
