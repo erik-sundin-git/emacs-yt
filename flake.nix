@@ -72,6 +72,30 @@
           ];
         } (builtins.readFile ./bin/yt-export-cookies.py);
 
+      # Runs a player command in the running Emacs, for window manager keys.
+      # emacsclient comes from PATH, to match the Emacs that runs the server.
+      mkRemote =
+        pkgs:
+        pkgs.writeShellApplication {
+          name = "yt-remote";
+          runtimeInputs = [
+            pkgs.coreutils
+            pkgs.gnused
+            pkgs.libnotify
+          ];
+          text = builtins.readFile ./bin/yt-remote;
+        };
+
+      # mpv's MPRIS script, without the xesam:url it would publish: for yt
+      # that is the signed stream URL, which must stay in memory.
+      mkMpris =
+        pkgs:
+        pkgs.mpvScripts.mpris.overrideAttrs (old: {
+          postPatch = (old.postPatch or "") + ''
+            substituteInPlace mpris.c --replace-fail "add_metadata_uri(ud->mpv, &dict);" ""
+          '';
+        });
+
       # What a host needs at runtime besides yt-dlp and vlc.
       mkRuntime =
         pkgs:
@@ -100,6 +124,8 @@
         {
           inherit emacs-test;
           yt-export-cookies = mkExporter pkgs;
+          yt-remote = mkRemote pkgs;
+          mpv-mpris = mkMpris pkgs;
           runtime = mkRuntime pkgs;
           # yt, byte-compiled with the Emacs of the test setup.
           default = mkYt pkgs (pkgs.emacsPackagesFor pkgs.emacs30-pgtk);
@@ -275,6 +301,8 @@
           # has caught races the interpreted run hides.
           test-compiled = makeCheck "compile test";
           package = p.default;
+          yt-remote = p.yt-remote;
+          mpv-mpris = p.mpv-mpris;
           inherit (p) yt-export-cookies;
         }
       );
@@ -286,6 +314,7 @@
           emacs: (prev.emacsPackagesFor emacs).overrideScope (efinal: _: { yt = mkYt final efinal; });
         yt-el = (final.emacsPackagesFor final.emacs).yt;
         yt-export-cookies = mkExporter final;
+        yt-remote = mkRemote final;
         yt-runtime = mkRuntime final;
       };
 
@@ -307,6 +336,11 @@
           options.programs.yt = {
             enable = lib.mkEnableOption "the programs yt runs: mpv and yt-export-cookies";
             installElisp = lib.mkEnableOption "yt in `programs.emacs.extraPackages`";
+            mpris = lib.mkEnableOption ''
+              mpv's MPRIS script, so media keys and status bars control yt's mpv.
+              Titles go to the session bus, stream URLs do not.  It adds to
+              `programs.mpv.scripts`, which cannot be combined with a custom
+              `programs.mpv.package`'';
             swayWindowRule = lib.mkEnableOption "a sway rule for mpv's window (app id emacs-yt)";
             swayWindowCommand = lib.mkOption {
               type = lib.types.str;
@@ -318,8 +352,14 @@
             lib.mkMerge [
               {
                 programs.mpv.enable = lib.mkDefault true;
-                home.packages = [ (mkExporter pkgs) ];
+                home.packages = [
+                  (mkExporter pkgs)
+                  (mkRemote pkgs)
+                ];
               }
+              (lib.mkIf cfg.mpris {
+                programs.mpv.scripts = [ (mkMpris pkgs) ];
+              })
               (lib.mkIf cfg.installElisp {
                 programs.emacs.extraPackages = epkgs: [ (mkYt pkgs epkgs) ];
               })

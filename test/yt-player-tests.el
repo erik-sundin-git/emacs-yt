@@ -326,5 +326,47 @@ directory of the fake yt-dlp and to the fake VLC's directory."
   (let ((yt-player-backend 'vlc))
     (should (eq (yt-player-backend) 'vlc))))
 
+;;;; From outside Emacs
+
+(defmacro yt-player-test--remote (&rest body)
+  "Run BODY with a fake backend that records its commands in `sent'."
+  `(let ((sent nil)
+         (yt-player--current-backend 'fake)
+         (transient nil))
+     (cl-letf (((symbol-function 'yt-player-backend-command)
+                (lambda (_backend command &rest args)
+                  (push (cons command args) sent)
+                  (when (eq command 'toggle-skipping)
+                    (message "Skipping SponsorBlock segments: off"))))
+               ((symbol-function 'set-transient-map)
+                (lambda (&rest _) (setq transient t))))
+       ,@body)))
+
+(ert-deftest yt-player-remote-runs-commands ()
+  "A remote action runs its command, without capturing the next key."
+  (yt-player-test--remote
+   (should-not (yt-player-remote 'pause))
+   (should-not (yt-player-remote 'seek-forward))
+   (should (equal (reverse sent) '((pause) (seek 5))))
+   (should-not transient)
+   ;; The same command typed in Emacs lets its keys repeat.
+   (let ((repeat-mode nil))
+     (yt-player-pause))
+   (should transient)))
+
+(ert-deftest yt-player-remote-returns-messages ()
+  "What the command says, or the error it signals, is returned as plain text."
+  (yt-player-test--remote
+   (should (equal (yt-player-remote 'toggle-skipping)
+                  "Skipping SponsorBlock segments: off"))
+   ;; Said again, it is logged as repeated, and still returned.
+   (should (equal (yt-player-remote 'toggle-skipping)
+                  "Skipping SponsorBlock segments: off"))
+   (should-not (text-properties-at 0 (yt-player-remote 'toggle-skipping)))
+   (let ((yt-player--current-backend nil))
+     (should (equal (yt-player-remote 'pause) "Nothing is playing"))))
+  (should-error (yt-player-remote 'delete-everything) :type 'user-error)
+  (should-error (yt-player-remote "pause") :type 'user-error))
+
 (provide 'yt-player-tests)
 ;;; yt-player-tests.el ends here

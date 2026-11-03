@@ -730,10 +730,15 @@ out.  Playing another video ends the sequence."
   "," #'yt-player-previous-chapter
   "=" #'yt-player-normal-speed)
 
+(defvar yt-player--remote nil
+  "Non-nil while `yt-player-remote' runs a command, from outside Emacs.")
+
 (defun yt-player--repeat ()
   "Let the keys of `yt-player-repeat-map' repeat the last command.
-Do nothing when `repeat-mode' is on, which handles this itself."
-  (unless (bound-and-true-p repeat-mode)
+Do nothing when `repeat-mode' is on, which handles this itself, or
+when the command came from outside Emacs: the next key typed in Emacs
+must not go to the player."
+  (unless (or yt-player--remote (bound-and-true-p repeat-mode))
     (set-transient-map yt-player-repeat-map)))
 
 ;;;###autoload
@@ -842,6 +847,62 @@ It goes on from where it is, in its place in the queue."
                    yt-player-next-chapter yt-player-previous-chapter
                    yt-player-normal-speed))
   (put command 'repeat-map 'yt-player-repeat-map))
+
+;;;; From outside Emacs
+
+(defconst yt-player-remote-commands
+  '((pause . yt-player-pause)
+    (seek-forward . yt-player-seek-forward)
+    (seek-backward . yt-player-seek-backward)
+    (seek-forward-more . yt-player-seek-forward-more)
+    (seek-backward-more . yt-player-seek-backward-more)
+    (next . yt-player-next)
+    (previous . yt-player-previous)
+    (next-chapter . yt-player-next-chapter)
+    (previous-chapter . yt-player-previous-chapter)
+    (faster . yt-player-faster)
+    (slower . yt-player-slower)
+    (normal-speed . yt-player-normal-speed)
+    (unskip . yt-player-unskip)
+    (toggle-skipping . yt-player-toggle-skipping)
+    (toggle-audio . yt-player-toggle-audio)
+    (stop . yt-player-stop)
+    (quit . yt-player-quit))
+  "The actions of `yt-player-remote', and the commands they run.")
+
+;;;###autoload
+(defun yt-player-remote (action)
+  "Run the player command of ACTION, a symbol, for a caller outside Emacs.
+ACTION is a key of `yt-player-remote-commands'.  This is what the
+yt-remote script calls, through emacsclient, for window manager keys.
+Return the last message the command showed, or the text of the
+`user-error' it signaled, such as \"Nothing is playing\"; return nil
+if it showed none.  Most commands show nothing at once: mpv answers
+later."
+  (let ((command (and (symbolp action) (alist-get action yt-player-remote-commands)))
+        (log (messages-buffer)))
+    (unless command
+      (user-error "Unknown yt player action: %S" action))
+    (let ((tick (with-current-buffer log (buffer-chars-modified-tick))))
+      (condition-case err
+          (let ((yt-player--remote t))
+            (funcall command)
+            (yt-player--last-logged log tick))
+        (user-error (error-message-string err))))))
+
+(defun yt-player--last-logged (log tick)
+  "Return the message logged in the buffer LOG since its TICK.
+TICK is a `buffer-chars-modified-tick'.  A message repeated is logged
+as \"[N times]\" after the old one, so any change means the last line
+is new.  Return nil if LOG did not change, as when `message-log-max'
+is nil."
+  (with-current-buffer log
+    (when (> (buffer-chars-modified-tick) tick)
+      (save-excursion
+        (goto-char (point-max))
+        (skip-chars-backward "\n")
+        (let ((line (buffer-substring-no-properties (line-beginning-position) (point))))
+          (replace-regexp-in-string " \\[[0-9]+ times\\]\\'" "" line))))))
 
 ;;;; Mode line
 

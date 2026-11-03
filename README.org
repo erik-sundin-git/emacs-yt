@@ -234,6 +234,39 @@ a plain YouTube URL, so notes do not depend on yt, and with
 =yt-url-handler-mode= on, following it plays the video in yt from that
 time.
 
+* Controlling yt from outside Emacs
+=yt-remote ACTION= runs a player command in the running Emacs, through
+=emacsclient=, for window manager keys: =yt-remote pause= pauses whatever
+yt plays, wherever the focus is.  The actions are =pause=, =seek-forward=,
+=seek-backward=, =seek-forward-more=, =seek-backward-more=, =next=,
+=previous=, =next-chapter=, =previous-chapter=, =faster=, =slower=,
+=normal-speed=, =unskip=, =toggle-skipping=, =toggle-audio=, =stop= and
+=quit= (=yt-player-remote-commands=).  What yt says back, such as "Nothing
+is playing", shows as a notification; most actions say nothing, since mpv
+answers later.  Emacs must run a server (the daemon, or =M-x
+server-start=); =yt-remote= never starts one.  The Home Manager module
+installs it; elsewhere, =nix build .#yt-remote=.
+
+A sway mode, for example:
+
+#+begin_src conf
+bindsym $mod+y mode yt
+mode yt {
+    bindsym --no-repeat k exec yt-remote pause
+    bindsym l exec yt-remote seek-forward
+    bindsym h exec yt-remote seek-backward
+    bindsym --no-repeat n exec yt-remote next
+    bindsym Escape mode default
+}
+#+end_src
+
+With =programs.yt.mpris = true;= in the Home Manager module, mpv gets its
+MPRIS script, so media keys (=playerctl play-pause=) and status bars
+control yt's mpv too; yt follows what they do.  An MPRIS "Stop" empties
+mpv's playlist, unlike yt's own stop, which keeps the queue.  The option
+adds to =programs.mpv.scripts=, which Home Manager does not allow with a
+custom =programs.mpv.package=.
+
 * The mpv window
 mpv opens its own window with the Wayland app id =emacs-yt=, so window
 managers can place it.  For sway, for example:
@@ -310,7 +343,10 @@ on the display of the selected frame.
   own histories, which =savehist-mode= does not save unless
   =yt-save-minibuffer-history= is set.
 - *mpv:* its control socket, which accepts any mpv command, is in the mode
-  0700 runtime directory; yt never falls back to a shared directory.
+  0700 runtime directory; yt never falls back to a shared directory.  With
+  =programs.yt.mpris=, mpv publishes the title, position and length of the
+  video playing on the session D-Bus, for every program of your session;
+  yt's copy of the MPRIS script leaves out the stream URL.
 
 * Known limitations
 - The subscription feed has no exact upload times, only YouTube's "3 hours

@@ -1,0 +1,40 @@
+# yt-remote ACTION: run a yt player command in the running Emacs.
+#
+# For window manager key bindings: `yt-remote pause' pauses or resumes
+# whatever yt plays, whichever window has focus.  The actions are those
+# of `yt-player-remote-commands'.  What yt says back, if anything, is
+# shown as a notification.  Emacs must run a server (the daemon, or
+# M-x server-start); this never starts one.
+#
+# Copyright (C) 2026 Erik Sundin
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+action=${1-}
+case $action in
+    '' | *[!a-z-]*)
+        echo "usage: yt-remote ACTION, such as pause or seek-forward" >&2
+        exit 2 ;;
+esac
+
+note() {
+    # The text goes through Pango markup in most notification daemons.
+    text=$(printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
+    notify-send -u low -a yt -h string:x-dunst-stack-tag:yt -- yt "$text" || true
+}
+
+err=$(mktemp)
+trap 'rm -f "$err"' EXIT
+
+# -a false: never start another Emacs when the server is not running.
+if ! out=$(timeout 4 emacsclient -a false --timeout=3 \
+               --eval "(yt-player-remote '$action)" 2>"$err"); then
+    msg=$(sed -n 's/^\*ERROR\*: //p' "$err" | head -n 1)
+    note "${msg:-The Emacs server is not reachable}"
+    exit 1
+fi
+
+# The result is nil, or a string that emacsclient printed readably.
+[ "$out" = nil ] && exit 0
+out=${out#\"}
+out=${out%\"}
+note "$(printf '%s' "$out" | sed 's/\\\(.\)/\1/g')"

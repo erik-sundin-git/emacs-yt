@@ -1,6 +1,13 @@
 #+title: yt changelog
 
 * Unreleased
+- =yt-remote ACTION= runs a player command from outside Emacs (pause,
+  seek, next, chapters, speed, audio only, …), for window manager keys,
+  through =emacsclient= and =yt-player-remote=.  The Home Manager module
+  installs it.  Player commands run that way no longer leave their repeat
+  keys active in Emacs.
+- =programs.yt.mpris= adds mpv's MPRIS script, so media keys and status
+  bars control yt's mpv; it is patched not to publish the stream URL.
 - The feed hides watched videos by default (=yt-feed-hide-watched= is now
   t); =t w= shows them.
 - Fixed: after a refresh, a feed opened at the top jumped to its last
