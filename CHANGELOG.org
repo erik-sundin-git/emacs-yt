@@ -2,6 +2,10 @@
 
 * Unreleased
 ** After M7
+- An empty feed says which filters hide its videos and the key that shows
+  them again ("hiding watched videos (t w shows them)"); it used to say
+  "Press C" even when only a toggle hid them, which =C= does not clear.
+  A search without results says so.
 - =embark-act= on a row of any yt buffer works from the start; it used to
   do nothing until =C-c y f= had loaded yt-select.
 - Thumbnails that failed to download (offline, say) are tried again after

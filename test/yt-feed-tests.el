@@ -331,10 +331,32 @@ YTDLP is bound to the scenario directory of the fake yt-dlp."
       (yt-feed-filter-channel '("UCfakechannel00000000002" . "Fake Channel Two"))
       (should (equal (yt-feed-test--ids) '("fakevideo02")))
       (yt-feed-filter "nothing-matches")
-      (should (string-match-p "No videos match the filter" (buffer-string)))
+      (should (string-match-p
+               (concat "All 4 videos are hidden by the filter “nothing-matches” (C clears it); "
+                       "the channel filter Fake Channel Two (C clears it)\\.")
+               (buffer-string)))
       (yt-feed-clear-filters)
       (should (equal (yt-feed-test--ids) yt-feed-test--fixture-ids))
       (should (= (yt-test-calls ytdlp) 1)))))
+
+(ert-deftest yt-feed-empty-messages ()
+  "An empty feed says which filters hide it and the keys that show it."
+  (yt-feed-test--with-feed ytdlp
+    (yt-test-step ytdlp 1 :out (yt-test-fixture-string "feed.ndjson"))
+    (with-current-buffer (yt-feed-test--open)
+      (yt-mark-watched (mapcar #'yt-cache-get yt-feed-test--fixture-ids))
+      (yt-feed-toggle-hide-watched)
+      (should-not (yt-feed-test--ids))
+      (let ((text (buffer-string)))
+        (should (string-match-p
+                 "All 4 videos are hidden by hiding watched videos (t w shows them)\\." text))
+        ;; C would not help here, so it is not offered.
+        (should-not (string-match-p "C clears" text)))))
+  (with-temp-buffer
+    (yt-feed-mode)
+    (setq yt-feed--source '(search "no such thing"))
+    (yt-feed--redisplay)
+    (should (string-match-p "No results for “no such thing”\\." (buffer-string)))))
 
 (ert-deftest yt-feed-live-filter-restores-on-quit ()
   "Quitting the query prompt restores the filter from before it."

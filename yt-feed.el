@@ -411,11 +411,37 @@ one.  Return nil if there is no row."
               (cond (yt-feed--status yt-feed--status)
                     (yt-feed--refreshing "Fetching the feed…")
                     (yt-feed--error yt-feed--error)
-                    ((and yt-feed--videos (yt-feed--filter-description))
-                     "No videos match the filter.  Press C to clear it.")
+                    ((and yt-feed--videos (yt-feed--hidden-message)))
+                    ((eq (car-safe yt-feed--source) 'search)
+                     (format "No results for “%s”." (cadr yt-feed--source)))
                     (t (substitute-command-keys
-                        "No videos yet.  Press \\[yt-feed-refresh] to refresh.")))
+                        "No videos yet.  Press \\<yt-feed-mode-map>\\[yt-feed-refresh] to refresh.")))
               "\n"))))
+
+(defun yt-feed--hidden-message ()
+  "Say why every video of the feed is hidden, and how to show them.
+Return nil if no filter is on."
+  (let* ((filter yt-feed--filter)
+         (reasons
+          (delq nil
+                (list (and (plist-get filter :query)
+                           (format "the filter “%s” (\\[yt-feed-clear-filters] clears it)"
+                                   (plist-get filter :query)))
+                      (and (plist-get filter :channel)
+                           (format "the channel filter %s (\\[yt-feed-clear-filters] clears it)"
+                                   (cdr (plist-get filter :channel))))
+                      (and (plist-get filter :hide-watched)
+                           "hiding watched videos (\\[yt-feed-toggle-hide-watched] shows them)")
+                      (and (plist-get filter :hide-shorts)
+                           "hiding Shorts (\\[yt-feed-toggle-hide-shorts] shows them)")
+                      (and (plist-get filter :hide-upcoming)
+                           "hiding upcoming videos (\\[yt-feed-toggle-hide-upcoming] shows them)")))))
+    (and reasons
+         (substitute-command-keys
+          (concat "\\<yt-feed-mode-map>"
+                  (format "All %d videos are hidden by " (length yt-feed--videos))
+                  (string-join reasons "; ")
+                  ".")))))
 
 (defun yt-feed--redisplay ()
   "Print the feed again, keeping each window on the same video.
