@@ -1,0 +1,4 @@
+header:  updated just now  ·  filter “nothing-matches”, hiding watched  ·  0 of 4 videos
+   Channel Title   Age      Dur 
+
+  All 4 videos are hidden by the filter “nothing-matches” (C clears it); hiding watched videos (t w shows them).

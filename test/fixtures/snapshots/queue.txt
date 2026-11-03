@@ -1,0 +1,3 @@
+header: 
+▶   1 Fake Channel One     Title queued01                                                     12:34
+    2 Fake Channel Two     Title queued02                                                      1:01

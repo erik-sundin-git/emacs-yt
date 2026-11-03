@@ -103,6 +103,35 @@ cookies, but its value must start with \"FAKE\"."
                     (push (list file n reason) leaks)))))))))
     (nreverse leaks)))
 
+;;;; Snapshots
+
+(defconst yt-test-snapshots-dir (expand-file-name "snapshots" yt-test-fixtures-dir)
+  "Directory holding the expected text of yt buffers.")
+
+(defun yt-test-buffer-text (&optional buffer)
+  "Return the header line and the text of BUFFER, without properties."
+  (with-current-buffer (or buffer (current-buffer))
+    (concat "header: "
+            ;; format-mode-line does not run :eval forms in batch.
+            (pcase header-line-format
+              (`(:eval ,form) (substring-no-properties (or (eval form t) "")))
+              ((pred stringp) (substring-no-properties header-line-format))
+              (_ ""))
+            "\n"
+            (buffer-substring-no-properties (point-min) (point-max)))))
+
+(defun yt-test-snapshot (name &optional buffer)
+  "Check BUFFER's text against the snapshot NAME, as `yt-test-buffer-text'.
+With YT_UPDATE_SNAPSHOTS=1 in the environment, write the snapshot
+instead; check the result with git diff."
+  (let ((file (expand-file-name (concat name ".txt") yt-test-snapshots-dir))
+        (text (yt-test-buffer-text buffer)))
+    (if (equal (getenv "YT_UPDATE_SNAPSHOTS") "1")
+        (progn (make-directory yt-test-snapshots-dir t)
+               (yt-test-write file text))
+      (should (file-exists-p file))
+      (should (equal (cons name text) (cons name (yt-test-file-string file)))))))
+
 ;;;; Waiting for asynchronous results
 
 (defvar yt-test-timeout
