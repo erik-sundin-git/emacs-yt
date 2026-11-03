@@ -1,6 +1,9 @@
 #+title: yt changelog
 
 * Unreleased
+- mpv knows a video's chapters (it runs without its own yt-dlp hook, so it
+  had none): =C-c y .= and =C-c y ,= go to the next and previous chapter,
+  and repeat without the prefix.
 - =A= in a feed plays the unwatched videos shown from point down, in
   order, in mpv, keeping two queued ahead like the shuffle.
 - Playing or resuming a video again in mpv within a few hours starts at

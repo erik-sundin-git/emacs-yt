@@ -472,6 +472,27 @@ A sleeping process stands in for mpv."
         (should-not (plist-get (plist-get retry :options) :start)))
       (should-not (yt-video-position (yt-cache-get "videolive01"))))))
 
+(ert-deftest yt-mpv-gives-mpv-the-chapters ()
+  "mpv gets the chapters from yt-dlp's JSON once the file loaded."
+  (yt-mpv-test--with-mpv (_ytdlp _mpv)
+    (let* ((server (yt-mpv-test--connect))
+           (video (yt-mpv-test--video "videochap01"))
+           (streams (plist-put (copy-sequence (yt-mpv-test--streams)) :chapters
+                               '((:time 0.0 :title "Intro") (:time 120.0 :title "Main")))))
+      (yt-mpv--load video streams "replace")
+      (yt-test-wait-until (lambda () (yt-mpv-test--entry-ids video)) "loadfile reply")
+      (let ((id (car (yt-mpv-test--entry-ids video))))
+        (yt-mpv-test--play-through server id)
+        (yt-mpv-test--emit server :event "file-loaded"))
+      (should (equal (plist-get (yt-mpv-test--wait-for server "set_property") :command)
+                     '("set_property" "chapter-list"
+                       ((:time 0.0 :title "Intro") (:time 120.0 :title "Main")))))
+      (setq yt-player--current-backend 'mpv)
+      (yt-player-next-chapter)
+      (should (equal (plist-get (yt-mpv-test--wait-for server "add") :command)
+                     '("add" "chapter" 1)))
+      (should (eq (keymap-lookup yt-map ".") #'yt-player-next-chapter)))))
+
 (ert-deftest yt-mpv-entries-are-tracked-by-id ()
   "The same video queued twice is followed as two entries."
   (yt-mpv-test--with-mpv (_ytdlp _mpv)

@@ -132,7 +132,8 @@ The output is one JSON object; see `yt-ytdlp-parse-streams'."
 (defun yt-ytdlp-parse-streams (info)
   "Return the streams to play from INFO, the yt-dlp JSON of one video.
 The result is a plist (:video URL :audio URL :headers ALIST
-:available-at TIME :title STRING :duration SECONDS :live BOOL).
+:available-at TIME :title STRING :duration SECONDS :live BOOL
+:chapters LIST), the chapters being plists (:time SECONDS :title STRING).
 :audio is nil for a format that has both audio and video.  :live is
 non-nil for a stream that is live now, not for a past one.  :available-at is the
 latest time any of the streams may be fetched, as yt-dlp reports it,
@@ -158,7 +159,14 @@ or nil.  Return nil if INFO names no stream."
             :available-at (and times (apply #'max times))
             :title (plist-get info :title)
             :duration (plist-get info :duration)
-            :live (equal (plist-get info :live_status) "is_live")))))
+            :live (equal (plist-get info :live_status) "is_live")
+            :chapters (delq nil (mapcar (lambda (chapter)
+                                          (let ((start (plist-get chapter :start_time)))
+                                            (and (numberp start)
+                                                 (list :time (float start)
+                                                       :title (or (plist-get chapter :title)
+                                                                  "")))))
+                                        (plist-get info :chapters)))))))
 
 ;;;; Error classification
 

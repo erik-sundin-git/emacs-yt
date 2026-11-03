@@ -648,7 +648,9 @@ out.  Playing another video ends the sequence."
   "[" #'yt-player-slower
   "]" #'yt-player-faster
   "n" #'yt-player-next
-  "p" #'yt-player-previous)
+  "p" #'yt-player-previous
+  "." #'yt-player-next-chapter
+  "," #'yt-player-previous-chapter)
 
 (defun yt-player--repeat ()
   "Let the keys of `yt-player-repeat-map' repeat the last command.
@@ -717,6 +719,18 @@ Do nothing when `repeat-mode' is on, which handles this itself."
   (yt-player--command 'previous))
 
 ;;;###autoload
+(defun yt-player-next-chapter ()
+  "Go to the next chapter of the video."
+  (interactive)
+  (yt-player--command 'chapter 1))
+
+;;;###autoload
+(defun yt-player-previous-chapter ()
+  "Go back to the start of the chapter, or to the previous one."
+  (interactive)
+  (yt-player--command 'chapter -1))
+
+;;;###autoload
 (defun yt-player-unskip ()
   "Go back to the start of the segment mpv skipped last in this video.
 It is not skipped again.  See `yt-sponsorblock-categories'."
@@ -739,7 +753,8 @@ It is not skipped again.  See `yt-sponsorblock-categories'."
 
 (dolist (command '(yt-player-pause yt-player-seek-forward yt-player-seek-backward
                    yt-player-seek-forward-more yt-player-seek-backward-more
-                   yt-player-faster yt-player-slower yt-player-next yt-player-previous))
+                   yt-player-faster yt-player-slower yt-player-next yt-player-previous
+                   yt-player-next-chapter yt-player-previous-chapter))
   (put command 'repeat-map 'yt-player-repeat-map))
 
 ;;;; Mode line

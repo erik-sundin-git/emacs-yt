@@ -124,5 +124,15 @@
                                                               :live_status "was_live"))
                            :live))))
 
+(ert-deftest yt-ytdlp-parse-streams-chapters ()
+  "Chapters are kept with their start time and title."
+  (let ((info (yt-process-parse-json (yt-test-fixture-string "resolve-combined.json"))))
+    (should-not (plist-get (yt-ytdlp-parse-streams info) :chapters))
+    (setq info (plist-put info :chapters
+                          (list (list :start_time 0 :end_time 120 :title "Intro")
+                                (list :start_time 120.5 :end_time 754))))
+    (should (equal (plist-get (yt-ytdlp-parse-streams info) :chapters)
+                   '((:time 0.0 :title "Intro") (:time 120.5 :title ""))))))
+
 (provide 'yt-ytdlp-tests)
 ;;; yt-ytdlp-tests.el ends here

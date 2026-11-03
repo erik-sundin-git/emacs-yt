@@ -97,6 +97,7 @@ YouTube accepts the session again.
 | =<down>= / =<up>=    | seek 60 s                              |
 | =[= / =]= / ===  | slower / faster / normal speed             |
 | =n= / =p=      | next / previous in the playlist              |
+| =.= / =,=      | next / previous chapter                      |
 | =l=            | the playlist                                 |
 | =z=            | shuffle mpv's playlist                       |
 | =U= / =K=      | undo the last SponsorBlock skip / skipping on or off |

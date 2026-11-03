@@ -117,6 +117,9 @@ It starts again from 0 once a connection lasted a while.")
 (defvar yt-mpv--current nil
   "The playlist entry id of the file playing, or nil.")
 
+(defvar yt-mpv--loaded nil
+  "The playlist entry id of the file mpv loaded last, or nil.")
+
 (defvar yt-mpv--log nil
   "The latest warnings from mpv, newest first.")
 
@@ -134,7 +137,8 @@ It starts again from 0 once a connection lasted a while.")
         yt-mpv--connecting nil
         yt-mpv--properties nil
         yt-mpv--entries (make-hash-table)
-        yt-mpv--current nil))
+        yt-mpv--current nil
+        yt-mpv--loaded nil))
 
 (defun yt-mpv--current-p (instance)
   "Return non-nil if INSTANCE is the current mpv instance."
@@ -423,6 +427,14 @@ seeking to its end would gain nothing."
     (yt-mpv-send (list "seek" (plist-get segment :start) "absolute") #'yt-mpv--report)
     (message "Back to the %s" (yt-sponsorblock-category-name (plist-get segment :category)))))
 
+(defun yt-mpv--set-chapters (id)
+  "Give mpv the chapters of entry ID, which mpv does not get itself.
+mpv runs with --ytdl=no, so the chapters come from yt-dlp's JSON."
+  (when-let* ((entry (and id (gethash id yt-mpv--entries)))
+              (chapters (plist-get (yt-mpv--entry-streams entry) :chapters)))
+    (yt-mpv-send (list "set_property" "chapter-list" (vconcat chapters))
+                 #'yt-mpv--report)))
+
 (defun yt-mpv--mark-started (entry)
   "Note that the video of ENTRY started.
 Mark it watched if videos count when they start; see
@@ -533,6 +545,9 @@ URLs expire after some hours, which breaks queued entries."
     ("property-change" (yt-mpv--property (plist-get message :name)
                                          (plist-get message :data)))
     ("start-file" (yt-mpv--start-file (plist-get message :playlist_entry_id)))
+    ;; file-loaded names no entry: it is the one that started last.
+    ("file-loaded" (setq yt-mpv--loaded yt-mpv--current)
+                   (yt-mpv--set-chapters yt-mpv--current))
     ("end-file" (yt-mpv--end-file (plist-get message :playlist_entry_id)
                                   (plist-get message :reason)
                                   (plist-get message :file_error)))
@@ -623,9 +638,12 @@ the playlist index for the flags \"insert-at\"."
                (setf (yt-mpv--entry-video entry) video
                      (yt-mpv--entry-streams entry) streams
                      (yt-mpv--entry-retried entry) retried)
-               ;; The file may have started before this reply arrived.
+               ;; The file may have started, or even loaded, before
+               ;; this reply arrived.
                (when (eql id yt-mpv--current)
-                 (yt-mpv--mark-started entry))))))))
+                 (yt-mpv--mark-started entry))
+               (when (eql id yt-mpv--loaded)
+                 (yt-mpv--set-chapters id))))))))
     (message (if (equal flags "append-play") "Queued “%s” in mpv" "Playing “%s” in mpv")
              title)))
 
@@ -694,6 +712,7 @@ Start at START seconds.  The rest of the playlist stays as it is:
     ('shuffle (yt-mpv-send '("playlist-shuffle") #'yt-mpv--report))
     ('play-index (yt-mpv-send (list "playlist-play-index" (car args)) #'yt-mpv--report))
     ('remove (yt-mpv-send (list "playlist-remove" (car args)) #'yt-mpv--report))
+    ('chapter (yt-mpv-send (list "add" "chapter" (car args)) #'yt-mpv--report))
     ('unskip (yt-mpv--unskip))
     ('toggle-skipping
      (setq yt-mpv--skipping (not yt-mpv--skipping))

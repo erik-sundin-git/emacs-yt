@@ -414,6 +414,8 @@ Each binding has a short label, which which-key shows."
   "=" '("normal speed" . yt-player-normal-speed)
   "n" '("next video" . yt-player-next)
   "p" '("previous video" . yt-player-previous)
+  "." '("next chapter" . yt-player-next-chapter)
+  "," '("previous chapter" . yt-player-previous-chapter)
   "l" '("playlist" . yt-player-playlist)
   "z" '("shuffle playlist" . yt-player-shuffle-playlist)
   "U" '("undo skip" . yt-player-unskip)
