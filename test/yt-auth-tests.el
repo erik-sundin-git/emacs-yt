@@ -288,11 +288,16 @@ CALLBACK, if non-nil, is also passed to `yt-auth-export'."
   (yt-test-with-scenario (ytdlp export)
     (yt-auth-test--use-profile)
     (yt-test-install-cookies)
-    (dolist (n '(1 2))
-      (yt-test-step ytdlp n :exit 1 :err yt-auth-test--expired))
-    (dolist (n '(3 4))
+    ;; The old cookies are expired whichever call uses them: on a busy
+    ;; machine one run can fail, re-export and retry before the other
+    ;; has even started.
+    (yt-test-install-cookies (yt-test-cookies "FAKE-old-sid"))
+    (yt-test-write (expand-file-name "expired-sid" ytdlp) "FAKE-old-sid")
+    (yt-test-write (expand-file-name "expired.err" ytdlp) yt-auth-test--expired)
+    (dolist (n '(1 2 3 4))
       (yt-test-step ytdlp n :out "{\"entries\": [{\"id\": \"x\"}]}"))
-    (yt-test-step export 1 :out (yt-test-export-summary) :cookies (yt-test-cookies))
+    (yt-test-step export 1 :out (yt-test-export-summary)
+                  :cookies (yt-test-cookies "FAKE-new-sid"))
     (let (results)
       (dotimes (_ 2)
         (yt-auth-run (yt-ytdlp-verify-args) :source 'verify
@@ -301,7 +306,9 @@ CALLBACK, if non-nil, is also passed to `yt-auth-export'."
       (yt-test-wait-until (lambda () (= (length results) 2)))
       (should (equal results '(ok ok))))
     (should (= (yt-test-calls export) 1))
-    (should (= (yt-test-calls ytdlp) 4))))
+    ;; Each run fails once with the old cookies, unless it started after
+    ;; the export.
+    (should (memql (yt-test-calls ytdlp) '(3 4)))))
 
 (ert-deftest yt-auth-run-backs-off-after-bot-check ()
   "After a bot check, runs fail at once unless they ignore the back-off."

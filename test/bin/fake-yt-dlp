@@ -10,6 +10,9 @@
 #     one line every 50 ms if DIR/NN.mode is "stream" or "stream-hang";
 #   - sleeps until killed if DIR/NN.mode is "hang" or "stream-hang";
 #   - exits with the status in DIR/NN.exit, default 0.
+# If DIR/expired-sid exists and the --cookies file contains its text,
+# the call instead prints DIR/expired.err and exits 1, whatever its
+# number: a session that expired, however the calls interleave.
 #
 # Copyright (C) 2026 Erik Sundin
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -31,6 +34,12 @@ for arg in "$@"; do
     [ "$prev" = "--cookies" ] && cookies=$arg
     prev=$arg
 done
+
+if [ -n "$cookies" ] && [ -f "$dir/expired-sid" ] \
+       && grep -qF "$(cat "$dir/expired-sid")" "$cookies"; then
+    cat "$dir/expired.err" >&2
+    exit 1
+fi
 
 mode=$(cat "$dir/$nn.mode" 2>/dev/null || echo plain)
 if [ -n "$cookies" ] && [ -f "$dir/$nn.cookies" ]; then
