@@ -17,6 +17,8 @@
   - Forgetting the history (=yt-forget-history=, =D= in the history)
     leaves no old copy of the rows in the file: SQLite overwrites deleted
     rows, and its write-ahead log is emptied.
+  - The saved playlists and the channels list count unwatched videos with
+    one query instead of reading every cached video of every row.
 
 * 0.3.0 (2026-11-03)
 ** Keys that changed

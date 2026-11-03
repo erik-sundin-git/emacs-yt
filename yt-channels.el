@@ -52,7 +52,7 @@
   "The channels of this buffer, plists in YouTube's order.")
 
 (defvar-local yt-channels--stats nil
-  "The statistics of the channels printed last; see `yt-channels--stats'.")
+  "The statistics of the channels printed last; see `yt-cache-channel-stats'.")
 
 (defun yt-channels--from-json (entry)
   "Return the channel plist for ENTRY of yt-dlp's channel list, or nil."
@@ -68,24 +68,9 @@
                      (yt-channel-page-url id))
             :followers (yt-video--number (plist-get entry :channel_follower_count))))))
 
-(defun yt-channels--stats ()
-  "Return a hash table mapping channel ids to (UNWATCHED . LAST-UPLOAD).
-They are computed from the cached subscription feed."
-  (let ((stats (make-hash-table :test #'equal)))
-    (dolist (video (yt-cache-feed "subscriptions"))
-      (when-let* ((id (yt-video-channel-id video)))
-        (let ((stat (or (gethash id stats) (puthash id (cons 0 nil) stats)))
-              (ts (yt-video-timestamp video)))
-          (unless (yt-video-watched video)
-            (cl-incf (car stat)))
-          (when (and ts (not (memq (yt-video-live-status video) '(is_upcoming)))
-                     (or (not (cdr stat)) (> ts (cdr stat))))
-            (setcdr stat ts)))))
-    stats))
-
 (defun yt-channels--entries ()
   "Return the tabulated-list entries of the channels passing the filter."
-  (let ((stats (setq yt-channels--stats (yt-channels--stats)))
+  (let ((stats (setq yt-channels--stats (yt-cache-channel-stats)))
         (now (yt--now))
         (terms (yt-list-query-terms)))
     (delq nil

@@ -381,6 +381,40 @@ Return at most LIMIT videos, or `yt-cache-feed-max'."
               WHERE f.source = ? ORDER BY f.pos LIMIT ?"
                    (list source (or limit yt-cache-feed-max)))))))
 
+(defun yt-cache-unwatched-counts (prefix)
+  "Return a hash table of how many videos are not watched, per feed source.
+Only the sources starting with PREFIX count, such as \"playlist:\"."
+  (let ((counts (make-hash-table :test #'equal)))
+    (pcase-dolist (`(,source ,count)
+                   (sqlite-select (yt-cache-db)
+                                  "SELECT f.source, count(*) FROM feed f
+                                   JOIN videos v ON v.id = f.id
+                                   WHERE v.watched = 0 AND substr(f.source, 1, ?) = ?
+                                   GROUP BY f.source"
+                                  (list (length prefix) prefix)))
+      (puthash source count counts))
+    counts))
+
+(defun yt-cache-channel-stats ()
+  "Return a hash table of (UNWATCHED . LAST-UPLOAD) per channel id.
+They come from the cached subscription feed: UNWATCHED is how many
+of the channel's videos there you have not watched, LAST-UPLOAD the
+time of its latest video that is not an upcoming one, or nil."
+  (let ((stats (make-hash-table :test #'equal)))
+    (pcase-dolist (`(,id ,unwatched ,last)
+                   (sqlite-select
+                    (yt-cache-db)
+                    "SELECT json_extract(v.data, '$.\"channel-id\"') AS channel,
+                            sum(v.watched = 0),
+                            max(CASE WHEN coalesce(json_extract(v.data, '$.\"live-status\"'), '')
+                                          <> 'is_upcoming'
+                                     THEN json_extract(v.data, '$.timestamp') END)
+                     FROM feed f JOIN videos v ON v.id = f.id
+                     WHERE f.source = 'subscriptions' AND channel IS NOT NULL
+                     GROUP BY channel"))
+      (puthash id (cons unwatched last) stats))
+    stats))
+
 (defun yt-cache-put-feed (source videos &optional replace)
   "Merge the freshly fetched VIDEOS, in feed order, into the feed SOURCE.
 The new order is VIDEOS followed by the previously cached videos that

@@ -62,21 +62,18 @@
                           (plist-get entry :url))
                      (format "https://www.youtube.com/playlist?list=%s" id))))))
 
-(defun yt-playlists--unwatched (id)
-  "Return how many cached videos of the playlist ID are not watched."
-  (seq-count (lambda (video) (not (yt-video-watched video)))
-             (yt-cache-feed (concat "playlist:" id))))
-
 (defun yt-playlists--entries ()
   "Return the tabulated-list entries of the playlists passing the filter."
-  (let ((terms (yt-list-query-terms)))
+  (let ((terms (yt-list-query-terms))
+        ;; One query for every playlist, not one feed read per row.
+        (unwatched (yt-cache-unwatched-counts "playlist:")))
     (delq nil
           (mapcar
            (lambda (playlist)
              (let* ((id (plist-get playlist :id))
                     (title (plist-get playlist :title))
                     (channel (or (plist-get playlist :channel) ""))
-                    (new (yt-playlists--unwatched id)))
+                    (new (gethash (concat "playlist:" id) unwatched 0)))
                (when (yt-list-match-p terms (downcase title) (downcase channel))
                  (list id
                        (vector (if (yt-cache-playlist-saved-p id)

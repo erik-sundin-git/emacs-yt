@@ -315,5 +315,26 @@
                   (zerop (file-attribute-size (file-attributes wal))))))
     (should-not (yt-cache-history))))
 
+(ert-deftest yt-cache-counts-in-one-query ()
+  "Unwatched counts per feed and channel statistics come from SQL."
+  (yt-test-with-scenario (_ _)
+    (yt-cache-put-feed "subscriptions"
+                       (list (yt-video--make :id "aaaaaaaaaaa" :channel-id "UC1" :timestamp 100)
+                             (yt-video--make :id "bbbbbbbbbbb" :channel-id "UC1" :timestamp 300
+                                             :live-status 'is_upcoming)
+                             (yt-video--make :id "ccccccccccc" :channel-id "UC2" :timestamp 200)
+                             (yt-video--make :id "ddddddddddd")))
+    (yt-mark-watched "ccccccccccc")
+    (let ((stats (yt-cache-channel-stats)))
+      (should (equal (gethash "UC1" stats) '(2 . 100)))
+      (should (equal (gethash "UC2" stats) '(0 . 200)))
+      (should (= (hash-table-count stats) 2)))
+    (yt-cache-put-feed "playlist:PL1" (list (yt-video--make :id "aaaaaaaaaaa")
+                                            (yt-video--make :id "ccccccccccc"))
+                       t)
+    (let ((counts (yt-cache-unwatched-counts "playlist:")))
+      (should (= (gethash "playlist:PL1" counts) 1))
+      (should-not (gethash "subscriptions" counts)))))
+
 (provide 'yt-cache-tests)
 ;;; yt-cache-tests.el ends here
