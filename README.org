@@ -127,6 +127,7 @@ the info and queue buffers):
 | =c= / =C=     | show one channel / clear the filters                     |
 | =t w=, =t s=, =t u= | hide watched videos, Shorts, upcoming streams      |
 | =t n=         | show only the videos new since your last visit (◆)      |
+| =x= / =t m=   | mute the channel at hand (its videos leave the feed) / show muted ones |
 | =W=           | mark every video shown as watched (=u= right after undoes it) |
 | =t i=         | thumbnails                                               |
 | =l=           | the channels                                             |

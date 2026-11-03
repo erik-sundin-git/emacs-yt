@@ -46,6 +46,9 @@ Older videos drop out of the feed but keep their watched state.")
 Each function is called with a list of video ids and the new state,
 non-nil for watched.")
 
+(defvar yt-muted-changed-hook nil
+  "Hook run after a channel was muted or unmuted.")
+
 (defvar yt-history-changed-hook nil
   "Hook run after the list of videos you played, or a resume position, changed.")
 
@@ -57,7 +60,7 @@ and :url, and non-nil if you are now subscribed.")
 (defvar yt-cache--db nil
   "The open cache database, or nil.")
 
-(defconst yt-cache--schema-version 4
+(defconst yt-cache--schema-version 5
   "Version of the cache schema, stored as SQLite's user_version.")
 
 (defconst yt-cache--min-reader-version 4
@@ -95,7 +98,9 @@ and writing the fields needs neither cl-macs nor a lookup at run time.")
 
 (defun yt-cache--create-schema (db)
   "Create the tables missing from DB and record the schema version.
-Version 2 added the channels table, version 3 the playlists table."
+Version 2 added the channels table, version 3 the playlists table,
+version 4 the history table and version 5 the channel_prefs table;
+each only added a table, so `yt-cache--min-reader-version' stays 4."
   (dolist (sql '("CREATE TABLE IF NOT EXISTS videos (
                    id TEXT PRIMARY KEY, data TEXT NOT NULL,
                    fetched_at INTEGER, watched INTEGER NOT NULL DEFAULT 0,
@@ -111,7 +116,9 @@ Version 2 added the channels table, version 3 the playlists table."
                    id TEXT PRIMARY KEY, saved_at INTEGER NOT NULL, data TEXT NOT NULL)"
                  "CREATE TABLE IF NOT EXISTS history (
                    id TEXT PRIMARY KEY, played_at INTEGER NOT NULL)"
-                 "CREATE INDEX IF NOT EXISTS history_order ON history (played_at)"))
+                 "CREATE INDEX IF NOT EXISTS history_order ON history (played_at)"
+                 "CREATE TABLE IF NOT EXISTS channel_prefs (
+                   id TEXT PRIMARY KEY, name TEXT, muted INTEGER NOT NULL DEFAULT 0)"))
     (sqlite-execute db sql))
   (sqlite-execute db (format "PRAGMA user_version = %d" yt-cache--schema-version))
   (sqlite-execute db "INSERT OR REPLACE INTO meta (key, value) VALUES ('min_reader', ?)"
@@ -505,6 +512,24 @@ Its videos leave the cached subscription feed too.  Then run
           (sqlite-execute db "DELETE FROM feed WHERE source = ? AND id = ?"
                           (list "subscriptions" (yt-video-id video)))))))
   (run-hook-with-args 'yt-subscriptions-changed-functions channel nil))
+
+(defun yt-cache-muted-channels ()
+  "Return a hash table of the muted channels, mapping their ids to names."
+  (let ((muted (make-hash-table :test #'equal)))
+    (pcase-dolist (`(,id ,name)
+                   (sqlite-select (yt-cache-db)
+                                  "SELECT id, name FROM channel_prefs WHERE muted = 1"))
+      (puthash id name muted))
+    muted))
+
+(defun yt-cache-set-muted (id name muted)
+  "Mute the channel ID, called NAME, or unmute it if MUTED is nil.
+Then run `yt-muted-changed-hook'."
+  (sqlite-execute (yt-cache-db)
+                  "INSERT INTO channel_prefs (id, name, muted) VALUES (?, ?, ?)
+                   ON CONFLICT (id) DO UPDATE SET name = excluded.name, muted = excluded.muted"
+                  (list id name (if muted 1 0)))
+  (run-hooks 'yt-muted-changed-hook))
 
 (defun yt-cache--prune-plist (plist)
   "Return PLIST without the properties whose value is nil."

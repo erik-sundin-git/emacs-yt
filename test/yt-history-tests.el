@@ -79,7 +79,7 @@
     (yt-cache-close)
     (yt-cache-add-history (yt-history-test--video "historyvid1"))
     (should (equal (yt-history-test--ids) '("historyvid1")))
-    (should (= (caar (sqlite-select (yt-cache-db) "PRAGMA user_version")) 4))))
+    (should (= (caar (sqlite-select (yt-cache-db) "PRAGMA user_version")) yt-cache--schema-version))))
 
 (ert-deftest yt-history-started-records-and-sends ()
   "A started video goes into the history, and once to YouTube if asked."

@@ -328,6 +328,33 @@ YTDLP is bound to the scenario directory of the fake yt-dlp."
                                             (member "fakevideo02" yt-feed-test--fixture-ids))
                                     "the subscription feed" nil)))))))
 
+(ert-deftest yt-feed-mutes-channels ()
+  "\\`x' hides a channel's videos from the subscription feed; \\`t m' shows them."
+  (yt-feed-test--with-feed ytdlp
+    (yt-test-step ytdlp 1 :out (yt-test-fixture-string "feed.ndjson"))
+    (with-current-buffer (yt-feed-test--open)
+      (should (eq (keymap-lookup yt-feed-mode-map "x") #'yt-feed-toggle-mute))
+      (goto-char (gethash "fakevideo01" (yt-feed--row-positions)))
+      (call-interactively #'yt-feed-toggle-mute)
+      ;; Both videos of Fake Channel One go.
+      (should (equal (yt-feed-test--ids) '("fakevideo02" "fakeshort04")))
+      (should (string-match-p "hiding muted channels" (yt-feed--header-line)))
+      (yt-feed-toggle-hide-muted)
+      (should (equal (yt-feed-test--ids) yt-feed-test--fixture-ids))
+      (yt-feed-toggle-hide-muted)
+      ;; Its own uploads are never hidden.
+      (with-temp-buffer
+        (yt-feed-mode)
+        (setq yt-feed--source '(channel "UCfakechannel00000000001" "https://x" "One"))
+        (yt-feed--set-videos (list (yt-cache-get "fakevideo01")))
+        (yt-feed--redisplay)
+        (should (equal (yt-feed-test--ids) '("fakevideo01"))))
+      ;; x again unmutes.
+      (goto-char (gethash "fakevideo02" (yt-feed--row-positions)))
+      (yt-feed-toggle-mute "UCfakechannel00000000001" nil "Fake Channel One")
+      (should (equal (yt-feed-test--ids) yt-feed-test--fixture-ids))
+      (should (zerop (hash-table-count (yt-cache-muted-channels)))))))
+
 (ert-deftest yt-feed-full-refresh-cancels-running-one ()
   "\\[yt-feed-refresh-all] cancels a running refresh and fetches everything."
   (yt-feed-test--with-feed ytdlp

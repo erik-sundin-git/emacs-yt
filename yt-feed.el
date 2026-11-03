@@ -87,8 +87,12 @@ playlist, and (search QUERY) for search results.")
 (defvar-local yt-feed--filter nil
   "The active filter, a plist.
 :query is the query string, see `yt-list-parse-query'; :channel is
-\(ID . NAME) of the channel shown; :hide-watched, :hide-shorts and
-:hide-upcoming are booleans.")
+\(ID . NAME) of the channel shown; :hide-watched, :hide-shorts,
+:hide-upcoming and :hide-muted are booleans.")
+
+(defvar-local yt-feed--muted nil
+  "The muted channels, a hash table of ids, in the subscription feed.
+Elsewhere nil: a channel's own uploads are never hidden.")
 
 (defvar-local yt-feed--shown 0
   "Number of videos printed, that is, passing the filter.")
@@ -177,6 +181,8 @@ FILTER."
         (channel (downcase (or (yt-video-channel video) "")))
         (shown (plist-get filter :channel)))
     (and (not (and (plist-get filter :hide-watched) (yt-video-watched video)))
+         (not (and (plist-get filter :hide-muted) yt-feed--muted
+                   (gethash (yt-video-channel-id video) yt-feed--muted)))
          (or (not (plist-get filter :only-arrived)) (yt-feed--arrived-p video))
          (not (and (plist-get filter :hide-shorts) (yt-video-short-p video)))
          (not (and (plist-get filter :hide-upcoming)
@@ -225,7 +231,10 @@ less than `yt-feed-visit-gap' seconds ago, which is the same visit."
     (let ((hidden (delq nil (list (and (plist-get yt-feed--filter :hide-watched) "watched")
                                   (and (plist-get yt-feed--filter :hide-shorts) "Shorts")
                                   (and (plist-get yt-feed--filter :hide-upcoming)
-                                       "upcoming")))))
+                                       "upcoming")
+                                  (and (plist-get yt-feed--filter :hide-muted)
+                                       yt-feed--muted (> (hash-table-count yt-feed--muted) 0)
+                                       "muted channels")))))
       (when hidden
         (push (concat "hiding " (string-join hidden ", ")) parts)))
     (when (plist-get yt-feed--filter :only-arrived)
@@ -400,6 +409,9 @@ Return nil if no filter is on."
                            "hiding Shorts (\\[yt-feed-toggle-hide-shorts] shows them)")
                       (and (plist-get filter :hide-upcoming)
                            "hiding upcoming videos (\\[yt-feed-toggle-hide-upcoming] shows them)")
+                      (and (plist-get filter :hide-muted) yt-feed--muted
+                           (> (hash-table-count yt-feed--muted) 0)
+                           "hiding muted channels (\\[yt-feed-toggle-hide-muted] shows them)")
                       (and (plist-get filter :only-arrived)
                            "showing only new ones (\\[yt-feed-toggle-only-arrived] shows all)")))))
     (and reasons
@@ -415,6 +427,7 @@ The row at point in each window showing the buffer, and the number
 of lines above it in the window, are restored.  A row that was
 filtered out is replaced by its nearest neighbour."
   (yt-feed--update-kept)
+  (setq yt-feed--muted (and (eq yt-feed--source 'subscriptions) (yt-cache-muted-channels)))
   (let* ((old-ids (yt-feed--printed-ids))
          (point-id (tabulated-list-get-id))
          (windows (mapcar (lambda (window)
@@ -869,6 +882,31 @@ to the channel of the video at point."
     (yt-feed--set-filter :only-arrived on)
     (message (if on "Showing only videos new since your last visit" "Showing all videos"))))
 
+(defun yt-feed-toggle-hide-muted ()
+  "Toggle whether the subscription feed hides muted channels."
+  (interactive nil yt-feed-mode)
+  (yt-feed--toggle :hide-muted "muted channels"))
+
+(defun yt-feed-toggle-mute (id _url name)
+  "Mute the channel NAME with ID, or unmute it if it is muted.
+A muted channel's videos are hidden from the subscription feed;
+\\[yt-feed-toggle-hide-muted] there shows them.  Interactively,
+the channel at hand."
+  (interactive (yt-channel-at-point))
+  (let ((muted (not (gethash id (yt-cache-muted-channels)))))
+    (yt-cache-set-muted id name muted)
+    (message (if muted
+                 "Muted %s: its videos are hidden from the subscription feed"
+               "Unmuted %s")
+             name)))
+
+(defun yt-feed--muted-changed ()
+  "Show the feed buffers again after a channel was muted or unmuted."
+  (dolist (buffer (yt-feed--buffers))
+    (with-current-buffer buffer
+      (when (eq yt-feed--source 'subscriptions)
+        (yt-feed--redisplay)))))
+
 (defun yt-feed-toggle-hide-upcoming ()
   "Toggle whether the feed hides upcoming and live streams."
   (interactive nil yt-feed-mode)
@@ -881,6 +919,7 @@ to the channel of the video at point."
   "w" #'yt-feed-toggle-hide-watched
   "s" #'yt-feed-toggle-hide-shorts
   "u" #'yt-feed-toggle-hide-upcoming
+  "m" #'yt-feed-toggle-hide-muted
   "n" #'yt-feed-toggle-only-arrived
   "i" #'yt-feed-toggle-thumbnails)
 
@@ -899,6 +938,7 @@ to the channel of the video at point."
   "z" #'yt-feed-shuffle
   "A" #'yt-feed-play-all-from-here
   "W" #'yt-feed-mark-all-watched
+  "x" #'yt-feed-toggle-mute
   "+" #'yt-feed-add
   "-" #'yt-feed-remove
   "L" #'yt-login)
@@ -986,7 +1026,8 @@ the feed was updated, the active filters and the number of videos.
         mode-line-process '(:eval (and yt-feed--refreshing " Refreshing…")))
   (setq-local yt-feed--filter (list :hide-watched yt-feed-hide-watched
                                     :hide-shorts yt-feed-hide-shorts
-                                    :hide-upcoming yt-feed-hide-upcoming))
+                                    :hide-upcoming yt-feed-hide-upcoming
+                                    :hide-muted t))
   (setq-local revert-buffer-function #'yt-feed--revert)
   (setq-local yt-video-at-point-function #'yt-feed-video-at-point)
   (setq-local yt-list-reprint-function #'yt-feed--redisplay)
@@ -998,6 +1039,7 @@ the feed was updated, the active filters and the number of videos.
   (add-hook 'yt-watched-changed-functions #'yt-feed--watched-changed)
   (add-hook 'yt-auth-state-change-hook #'yt-feed--auth-changed)
   (add-hook 'yt-subscriptions-changed-functions #'yt-feed--subscriptions-changed)
+  (add-hook 'yt-muted-changed-hook #'yt-feed--muted-changed)
   (unless (memq yt-feed--age-timer timer-list)
     (setq yt-feed--age-timer (run-with-timer yt-feed-age-update-interval
                                              yt-feed-age-update-interval

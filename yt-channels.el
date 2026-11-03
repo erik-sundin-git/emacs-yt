@@ -72,7 +72,8 @@
   "Return the tabulated-list entries of the channels passing the filter."
   (let ((stats (setq yt-channels--stats (yt-cache-channel-stats)))
         (now (yt--now))
-        (terms (yt-list-query-terms)))
+        (terms (yt-list-query-terms))
+        (muted (yt-cache-muted-channels)))
     (delq nil
           (mapcar
            (lambda (channel)
@@ -81,7 +82,10 @@
                     (stat (gethash id stats)))
                (when (yt-list-match-p terms (downcase name) (downcase name))
                  (list id
-                       (vector (propertize name 'face 'yt-feed-channel)
+                       (vector (if (gethash id muted)
+                                   (concat (propertize name 'face 'shadow)
+                                           (propertize " (muted)" 'face 'shadow))
+                                 (propertize name 'face 'yt-feed-channel))
                                (if (and stat (> (car stat) 0))
                                    (propertize (number-to-string (car stat))
                                                'face 'yt-feed-new-marker)
@@ -182,6 +186,10 @@
   (yt-unsubscribe (plist-get channel :id) (plist-get channel :url)
                   (plist-get channel :name) t))
 
+(defun yt-channels--muted-changed ()
+  "Show the channels buffer again after a channel was muted or unmuted."
+  (yt-channels--subscriptions-changed nil nil))
+
 (defun yt-channels--subscriptions-changed (_channel _subscribed)
   "Show the cached channels again in the channels buffer."
   (when-let* ((buffer (get-buffer yt-channels-buffer)))
@@ -199,6 +207,7 @@
   "b" #'yt-channels-browse
   "-" #'yt-channels-unsubscribe
   "d" #'yt-channels-unsubscribe
+  "x" #'yt-feed-toggle-mute
   "g" #'yt-channels-refresh
   "L" #'yt-login)
 
@@ -221,6 +230,7 @@ have not watched.
   (setq-local revert-buffer-function (lambda (&rest _) (yt-channels-refresh)))
   (add-hook 'kill-buffer-hook (lambda () (yt-process-cancel '(yt-channels . list))) nil t)
   (add-hook 'yt-subscriptions-changed-functions #'yt-channels--subscriptions-changed)
+  (add-hook 'yt-muted-changed-hook #'yt-channels--muted-changed)
   (tabulated-list-init-header))
 
 ;;;###autoload

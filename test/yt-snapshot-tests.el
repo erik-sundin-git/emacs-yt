@@ -71,6 +71,9 @@ YTDLP is bound to the fake yt-dlp's directory."
     (yt-snapshot-test--channels)
     (with-current-buffer (yt-channels)
       (yt-test-snapshot "channels")
+      (yt-cache-set-muted "UCfakechannel00000000001" "Fake Channel One" t)
+      (yt-test-snapshot "channels-muted")
+      (yt-cache-set-muted "UCfakechannel00000000001" "Fake Channel One" nil)
       (yt-list-filter "two")
       (yt-test-snapshot "channels-filtered")
       ;; The feed's syntax: !word excludes.

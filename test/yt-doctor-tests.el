@@ -46,7 +46,7 @@
           (should (string-match-p "  videos +1, 1 watched, 0 in the subscription feed" text))
           (should (string-match-p "^Thumbnails +.*(none cached, off" text))
           (should (string-match-p "^Programs\n" text))
-          (should (string-match-p "  schema +version 4" text))
+          (should (string-match-p (format "  schema +version %d" yt-cache--schema-version) text))
           (should (string-match-p "  backups +none" text))
           (should (string-match-p "^mpv +yt-test-no-such-mpv: not found" text))
           (should-not (string-match-p "FAKE-\\|LOGIN_INFO\\|SAPISID" text))))
