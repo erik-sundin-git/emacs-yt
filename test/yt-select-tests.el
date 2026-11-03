@@ -118,6 +118,31 @@
     (with-temp-buffer
       (should-not (yt-select-embark-target)))))
 
+(defun yt-select-test--child (forms)
+  "Evaluate FORMS in a fresh Emacs with this load path; return its output."
+  (with-temp-buffer
+    (let ((status (call-process
+                   (expand-file-name invocation-name invocation-directory) nil t nil
+                   "-Q" "--batch"
+                   "--eval" (prin1-to-string `(setq load-path ',load-path))
+                   "--eval" (prin1-to-string `(progn ,@forms)))))
+      (should (equal (list status (buffer-string)) (list 0 (buffer-string))))
+      (buffer-string))))
+
+(ert-deftest yt-select-embark-without-yt-select ()
+  "Embark acts on yt rows without yt-select loaded first, in either order."
+  (skip-unless (locate-library "embark"))
+  (dolist (order '((embark yt-feed) (yt-feed embark)))
+    (should (string-match-p
+             "registered: t"
+             (yt-select-test--child
+              `((dolist (feature ',order) (require feature))
+                (accept-process-output nil 0.1)
+                (princ (format "registered: %s"
+                               (and (memq 'yt-select-embark-target
+                                          (bound-and-true-p embark-target-finders))
+                                    t)))))))))
+
 (ert-deftest yt-select-marginalia-integration ()
   "Loading marginalia registers yt's annotations."
   (skip-unless (locate-library "marginalia"))

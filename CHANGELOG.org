@@ -2,6 +2,8 @@
 
 * Unreleased
 ** After M7
+- =embark-act= on a row of any yt buffer works from the start; it used to
+  do nothing until =C-c y f= had loaded yt-select.
 - Thumbnails that failed to download (offline, say) are tried again after
   ten minutes, or at once after a refresh reached YouTube, instead of
   never again in the session.

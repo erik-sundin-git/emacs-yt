@@ -43,6 +43,7 @@
 (require 'yt-ytdlp)
 (require 'yt-auth)
 (require 'yt-cache)
+(require 'yt-list)
 
 (defvar yt-player-available-margin 1.0
   "Seconds to wait after the time YouTube releases the streams.")
