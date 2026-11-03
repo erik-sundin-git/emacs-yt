@@ -44,12 +44,20 @@
 | `yt-ytdlp.el` | yt-dlp argv builders and the ordered error classifier (`yt-ytdlp-error-patterns` defconst). Version check. |
 | `yt-auth.el` | Profile selection, calling the exporter, the master cookie file, per-run cookie copies and write-back, auth state, `yt-login` / `yt-check-auth` / `yt-logout`. |
 | `yt-cache.el` | SQLite store (WAL, busy timeout). `yt-mark-watched` and `yt-watched-changed-functions`. Persistent state such as the chosen profile. |
-| `yt-feed.el` | `yt-feed-mode` (subscriptions and channel uploads) and `yt-channels-mode`, both built on tabulated-list. Filters, refresh, thumbnails. |
-| `yt-info.el` | `yt-info-mode` video detail buffer. |
-| `yt-player.el` | Backend generics, `yt-play` / `yt-enqueue`, player commands, `yt-player-mode` (mode-line segment), playlist buffer. |
-| `yt-mpv.el` | mpv backend: spawn, IPC, events, watched and resume tracking. |
+| `yt-feed.el` | `yt-feed-mode`: the subscription feed, channel uploads, playlists and search results, on tabulated-list. Filters, refresh, thumbnails, the visit marker. |
+| `yt-list.el` | What the lists share (added after M7): the `yt-feed-*` faces, columns that fit the window, `yt-list-mode` (the base of the channels, playlists and history lists: header line, empty message, filter, fetch state), and the loader of yt-select's embark and marginalia glue. |
+| `yt-channels.el` | `yt-channels-mode`, the subscribed channels (moved out of yt-feed in M5). |
+| `yt-playlists.el` | A channel's playlists and the saved ones (after M7). |
+| `yt-history.el` | The played videos (after M7). |
+| `yt-info.el` | `yt-info-mode` video detail buffer, with chapters and SponsorBlock segments. |
+| `yt-player.el` | Backend generics, `yt-play` / `yt-enqueue`, the stream cache, sequences and shuffle, player commands, `yt-player-mode` (mode-line segment), the queue buffer (mpv's playlist, called the playlist until 0.3.0). |
+| `yt-mpv.el` | mpv backend: spawn, IPC, events, watched and resume tracking, chapters, SponsorBlock skipping. |
 | `yt-vlc.el` | VLC backend. |
-| `yt-select.el` | `yt-select-video` completing-read (category `yt-video`). Optional marginalia and embark glue, loaded with `with-eval-after-load`. |
+| `yt-sponsorblock.el` | SponsorBlock segments, fetched with curl by hash prefix (after M7). |
+| `yt-subscribe.el` | Subscribing through YouTube's internal API with curl (after M7). |
+| `yt-url.el` | Strict parsing of YouTube links and `yt-url-handler-mode` for `browse-url` (after M7). |
+| `yt-thumbs.el` | Thumbnails, downloaded with curl (M7). |
+| `yt-select.el` | `yt-select-video` completing-read (category `yt-video`). Optional marginalia and embark glue, registered through `after-load-functions` (package-lint rejects `with-eval-after-load`). |
 | `yt-doctor.el` | `yt-doctor` diagnostics buffer. |
 | `bin/yt-export-cookies` | Small Python script, packaged by the flake (§4.2). |
 
@@ -58,15 +66,17 @@
 - yeetube, ytdious, and elfeed-tube only do search or RSS, not authenticated feeds.
 - The Commentary credits empv and mpv.el as prior art. If any code is adapted from them, their GPL copyright notices are kept.
 
-**Dependency graph** (strictly downward). Changed in M1: `yt-auth` depends on `yt-ytdlp`, not the other way round. Verifying a login has to run yt-dlp, so `yt-auth-run` (which runs yt-dlp with a per-run cookie copy) lives in `yt-auth`, and `yt-ytdlp` keeps only argument lists, the classifier and the version check:
+**Dependency graph** (downward; checked by `make load-check`, which loads and compiles each file alone). Changed in M1: `yt-auth` depends on `yt-ytdlp`, not the other way round. Verifying a login has to run yt-dlp, so `yt-auth-run` (which runs yt-dlp with a per-run cookie copy) lives in `yt-auth`, and `yt-ytdlp` keeps only argument lists, the classifier and the version check.  As of 0.3.0:
 ```
-yt-feed ─> yt-auth ─> yt-ytdlp ─> yt-process
-   │   └─> yt-cache ─> yt-video
-   └─> yt-player ─(lazy require by backend symbol)─> yt-mpv | yt-vlc
-yt-mpv/yt-vlc ─> yt-player, yt-ytdlp, yt-cache
-yt-info, yt-select, yt-doctor ─> yt-feed helpers, yt-player
-every module ─> yt (customs + keymaps only); yt.el requires nothing
+yt-select ─> yt-info, yt-playlists ─> yt-feed ─> yt-player ─> yt-auth ─> yt-ytdlp ─> yt-process
+yt-channels, yt-subscribe ─> yt-feed         │      │    └─> yt-cache ─> yt-video
+yt-history, yt-doctor ─> yt-player           │      ├─> yt-list ─> yt-video
+yt-mpv, yt-vlc ─> yt-player                  │      └─> yt-url ─> yt-video
+yt-mpv, yt-info ─> yt-sponsorblock ─> yt-process
+yt-feed ─> yt-thumbs ─> yt-process
+every module ─> yt (customs and keymaps); yt.el requires only xdg
 ```
+A few calls go the other way, lazily: yt-player loads a backend (`yt-mpv` or `yt-vlc`) by its symbol; the feed's `+`/`-` load yt-subscribe; yt-list loads yt-select from a timer once embark or marginalia is loaded; yt-url loads yt-player or yt-feed when it opens a link.
 
 **Autoloads:**
 - Every command bound in `yt-map` or `yt-player-map` gets `;;;###autoload`. `yt-map` and `yt-player-map` are defined in `yt.el`, so the keymaps work before anything else is loaded.
@@ -234,7 +244,7 @@ This design means **no file holding all browser cookies ever exists**. Running `
   - `yt-cache-videos &optional LIMIT`, `yt-cache-get`, `yt-cache-set-position`.
   - `yt-cache-meta` / `yt-cache-set-meta`.
   - `yt-forget-history` clears watched and position.
-- **Watched state:** `yt-mark-watched VIDEOS &optional UNWATCHED` is the **only** way to change it. It writes the rows in one transaction and then runs `yt-watched-changed-functions` once with the list of ids and the new state (changed in M2, so that marking a region redraws once).
+- **Watched state:** `yt-mark-watched VIDEOS &optional UNWATCHED` is the **only** way to change it, apart from `yt-forget-history`, which clears every mark at once. It writes the rows in one transaction and then runs `yt-watched-changed-functions` once with the list of ids and the new state (changed in M2, so that marking a region redraws once).
 - **File name:** the option `yt-cache-file` (nil means `yt.sqlite` in `yt-state-directory`), resolved by `yt-cache-file-name`.
 - **Shutdown:** `kill-emacs-hook` closes the database at depth 90, so it runs after the player has finalized.
 
@@ -520,9 +530,10 @@ The resolver's yt-dlp stderr goes through the §4.5 classifier for both backends
 - **Age, members-only, or bot check:** show the specific explanation.
 - **Anything else:** show the last error line, and `M-x yt-player-show-log` opens the ring or stderr.
 
-## 8. Customization (in `yt.el`)
+## 8. Customization (mostly in `yt.el`)
 - **Groups:** `yt`, plus `yt-backend`, `yt-feed`, and `yt-player`, each with `:group 'yt`.
-- **Every option has** an explicit `:type` and `:package-version '(yt . "0.1.0")`.
+- **Every option has** an explicit `:type` and the `:package-version` it was added in.
+- Changed after M7: options that belong to one module live there (`yt-player-youtube-history`, `yt-sponsorblock-categories`, `yt-thumbs-height`, …); `M-x customize-group RET yt` lists them all.
 
 | Option | Type | Default |
 |---|---|---|
@@ -607,26 +618,26 @@ The project does not edit the dotfiles. Development and testing happen in the sa
 | `checkdoc` | wrapper that fails on any checkdoc output |
 | `lint` | `package-lint-batch-and-exit`, `package-lint-main-file "yt.el"`, package-lint from `emacs-test`. **No network, no MELPA download.** |
 | `test` | `ert-run-tests-batch-and-exit $(SELECTOR)`. Run one test with `make test SELECTOR='"yt-feed-.*"'` |
-| `test-live` | `YT_LIVE=1`. Only from the sandbox (below). |
+| `load-check` | each file compiled and loaded in an Emacs of its own (added after M7) |
 | `all`, `clean` | |
 
 **Sandbox Emacs (`nix run .#sandbox`)**, for manual and live testing: a wrapper script that starts `emacs-test` as a GUI process separate from the host daemon.
-- Sets `XDG_STATE_HOME` and `XDG_CACHE_HOME` to `<repo>/.sandbox/{state,cache}`, and sets `yt-runtime-directory` to `$XDG_RUNTIME_DIR/yt-sandbox` (0700). `XDG_CONFIG_HOME` stays real, because yt-dlp finds the Chromium profile through it (docs/spike.md).
+- Sets `XDG_STATE_HOME` and `XDG_CACHE_HOME` to `yt-sandbox` directories of the real ones (changed after M7: they were `<repo>/.sandbox/{state,cache}`, which put the sandbox's cookies inside the checkout), and sets `yt-runtime-directory` to `$XDG_RUNTIME_DIR/yt-sandbox` (0700). `XDG_CONFIG_HOME` stays real, because yt-dlp finds the Chromium profile through it (docs/spike.md).
 - Unsets `LD_LIBRARY_PATH`, as the dev shell also does. The host shell's value makes the flake's mpv fail with `GLIBC_2.43 not found` (docs/spike.md).
 - Puts the flake's mpv, yt-dlp, vlc, `yt-export-cookies`, and curl first on PATH.
 - Runs `emacs -q --no-site-file --init-directory=<repo>/.sandbox/emacs.d --name yt-sandbox -l <repo>/sandbox/init.el` (changed in M2). The sandbox is default Emacs plus yt: `-q --no-site-file` skips every host init file, including `~/.emacs`, `default.el` and the `site-lisp` of the Nix profiles, which nixpkgs' `site-start.el` would otherwise add to `load-path`. The tracked `sandbox/init.el` is the only config: it adds the repo to `load-path`, generates and loads the autoloads, sets `yt-runtime-directory` and `custom-file`, and binds `C-c y`. Emacs's own files stay in `.sandbox/emacs.d`.
 - **Effect:**
-  - Its own cookie export, from the dedicated profile, into `.sandbox/state`.
+  - Its own cookie export, from the dedicated profile, into `$XDG_STATE_HOME/yt-sandbox`.
   - Its own SQLite file and its own mpv socket names.
   - Code changes take effect with `M-x eval-buffer` or a restart, with no straight rebuild.
-- `make test-live` / `M-x yt-run-live-tests` inside the sandbox runs `test/yt-live-tests.el`: 3 real feed items, resolving one stream, playing 5 s in mpv. These tests always `(skip-unless (getenv "YT_LIVE"))`.
+- `YT_LIVE=1 nix run .#smoke` (changed after M7; `make test-live` was never built) runs `test/yt-live.el` in batch with the sandbox's state: the yt-dlp version, the sign-in, five feed entries and the keys yt reads, resolving one stream without playing it, and SponsorBlock, printing counts only. It refuses to run without `YT_LIVE=1` and under CI.
 
 **Test design** (the default run uses no network, no mpv, no vlc, and no real cookies):
 - **Waiting:** `yt-test-wait-until PRED` polls with `(accept-process-output nil 0.05)`. The cap defaults to 30 s and can be overridden by environment variable. On timeout it fails with the predicate's name.
 - **`test/bin/fake-yt-dlp`** is a `#!/bin/sh` script with mode 755.
   - It is located with `(expand-file-name "bin/fake-yt-dlp" yt-test-dir)` and bound to `yt-ytdlp-program`.
   - `FAKE_SCENARIO=dir` keeps a call counter and replays `NN.out`, `NN.err`, and `NN.exit` for each call. This covers probe sequences, re-export and retry, and format retry.
-  - It appends its argv to `dir/argv.log`, so tests can assert that `--ignore-config` is present, the denylisted flags are absent, `--` comes before the URL, and the `--cookies` path is the per-run copy.
+  - It writes its argv to `dir/argv-NN`, one argument per line, so tests can assert that `--ignore-config` is present, the denylisted flags are absent, `--` comes before the URL, and the `--cookies` path is the per-run copy.
   - Modes: stream (partial lines, `sleep 0.05`) and hang (`exec sleep 1000`, so SIGINT reaches it).
 - **`test/bin/fake-export-cookies`** emits the JSON summary and writes a hand-made cookies.txt.
 - **Direct filter tests** (NDJSON and mpv) feed in chunks that:
@@ -676,6 +687,7 @@ After each milestone: report what changed, what was tested, and what is still op
 | **M4** (done) | yt-mpv: spawn with WAYLAND_DISPLAY, IPC, play/enqueue/pause/seek/speed/next/stop/quit, `yt-player-mode`, watched near the end, resume, cleanup on exit, the `auto` backend default, transient repeat, `homeModules.default` (mpv for the host) | In the sandbox, `RET` plays in mpv. `C-c y SPC` pauses. Closing mpv leaves no socket behind and marks the video watched past 90%. | The full fake-socket suite (above) |
 | **M5** (done) | Channels view, channel uploads (`o`, `l`), info buffer (`i`, second-pass queue), search (`C-c y s`), playlist buffer | `l` → `RET` shows uploads. `i` shows the description and chapters, and a chapter plays from its timestamp. | Parsers, rendering, the queue limit |
 | **M6** (done) | yt-select, marginalia, embark, `overlays.default`, `packages.default` (trivialBuild), `installElisp` | `embark-act` on a candidate plays it, in the sandbox with embark loaded. `nix build` succeeds. | Candidate and annotation tests |
+| **M8 and later** | See [IMPROVEMENT-PLAN.md](IMPROVEMENT-PLAN.md): the plan after M7, reviewed twice, with its progress. | | |
 | **M7** (done) | Thumbnails, face polish, the full `yt-doctor` (yt-dlp version and JS runtime, mpv/vlc, WAYLAND_DISPLAY and DBUS_SESSION_BUS_ADDRESS, profile, auth state, cookie file **modes and counts only**, cache path), README (install, profile setup, keys, sway snippet, privacy, known limitations), the host `use-package` snippet | Thumbnails load without blocking, measured the same way as in M2. `make all` passes. | Thumbnail queue, dedup, and `.part` rename |
 
 ## 13. Privacy notes (README)
@@ -683,6 +695,7 @@ After each milestone: report what changed, what was tested, and what is still op
   - yt-dlp talks only to www.youtube.com: the page, `youtubei/v1/browse` continuations, and the player JS, which deno runs locally.
   - The googlevideo CDN is contacted during playback.
   - Thumbnails come from i.ytimg.com with no cookies, using curl only.
+  - Added after M7: subscribing sends one request to youtubei/v1/subscription on www.youtube.com, with the cookies and a SAPISIDHASH header, through curl with a 0600 config file; SponsorBlock gets a 4-character hash prefix of the video id from sponsor.ajay.app, without cookies; with `yt-player-youtube-history`, yt-dlp's `--mark-watched` tells YouTube about each video played.  curl always runs with `--disable`, so `~/.curlrc` cannot add options.
 - **No telemetry**, and no yt-dlp self-update (Nix pins it).
 - **Cookies:**
   - They come only from the dedicated `emacs-yt` profile and only for youtube.com, in a 0600 plaintext file under `~/.local/state/yt/`.
@@ -692,6 +705,7 @@ After each milestone: report what changed, what was tested, and what is still op
 - **Local data:**
   - Watch history lives in a 0600 SQLite file, cleared with `yt-forget-history`.
   - Search queries appear in `/proc/*/cmdline` while yt-dlp runs (no hidepid), and are redacted in `*yt-log*`.
+  - Added after M7: the played videos are in the same file; `*yt-log*` also redacts authorization hashes and cookie headers; yt's prompt histories stay out of savehist unless `yt-save-minibuffer-history` is set; resolved stream URLs are kept in memory only, for mpv, until shortly before they expire.
 - **mpv socket:** it sits in `$XDG_RUNTIME_DIR/yt/` with mode 0700. mpv IPC can run arbitrary commands, so a world-writable fallback is never used.
 
 ---
