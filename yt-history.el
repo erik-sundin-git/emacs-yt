@@ -37,7 +37,6 @@
 (require 'yt-cache)
 (require 'yt-player)
 (require 'yt-list)
-(require 'yt-feed)
 
 (defconst yt-history-buffer "*yt: History*"
   "Name of the history buffer.")
@@ -60,9 +59,6 @@
 (defvar yt-history--refresh-timer nil
   "Timer that prints the history buffer again, or nil.")
 
-(defvar-local yt-history--query nil
-  "The filter on titles and channels, or nil.")
-
 (defun yt-history--progress (video)
   "Return how far you got in VIDEO, as text."
   (let ((position (yt-video-position video))
@@ -74,18 +70,13 @@
                       (yt-video-format-duration position)))
           (t ""))))
 
-(defun yt-history--match-p (video words)
-  "Return non-nil if every one of WORDS is in VIDEO's title or channel."
-  (let ((text (downcase (concat (or (yt-video-title video) "") " "
-                                (or (yt-video-channel video) "")))))
-    (seq-every-p (lambda (word) (string-search word text)) words)))
-
 (defun yt-history--entries ()
   "Return the tabulated-list entries of the videos passing the filter."
   (let ((now (yt--now))
-        (words (and yt-history--query (split-string (downcase yt-history--query)))))
+        (terms (yt-list-query-terms)))
     (cl-loop for (video . played) in yt-history--items
-             when (or (not words) (yt-history--match-p video words))
+             when (yt-list-match-p terms (downcase (or (yt-video-title video) ""))
+                                   (downcase (or (yt-video-channel video) "")))
              collect
              (list (yt-video-id video)
                    (vector (propertize (or (yt-video-channel video) "") 'face 'yt-feed-channel)
@@ -106,18 +97,12 @@
   "Return non-nil if entry A was played after entry B."
   (> (yt-history--played (car a)) (yt-history--played (car b))))
 
-(defun yt-history--header-line ()
-  "Return the header line of the history buffer."
-  (concat " "
-          (string-join
-           (delq nil
-                 (list (format "%d videos played" (length yt-history--items))
-                       (and yt-history--query (format "filter “%s”" yt-history--query))
-                       (substitute-command-keys
-                        "\\<yt-history-mode-map>\\[yt-history-remove] removes, \
-\\[yt-history-clear] clears")
-                       (and yt-player-youtube-history "also sent to YouTube")))
-           "  ·  ")))
+(defun yt-history--header-parts ()
+  "Return the parts of the history's header line."
+  (list (concat (yt-list-count (length yt-history--items) "video") " played")
+        (substitute-command-keys
+         "\\<yt-history-mode-map>\\[yt-history-remove] removes, \\[yt-history-clear] clears")
+        (and yt-player-youtube-history "also sent to YouTube")))
 
 (defun yt-history--print ()
   "Read the played videos again and print them, keeping point."
@@ -128,13 +113,7 @@
   (dolist (item yt-history--items)
     (puthash (yt-video-id (car item)) (car item) yt-history--table)
     (puthash (yt-video-id (car item)) (cdr item) yt-history--played-at))
-  (tabulated-list-print t)
-  (unless yt-history--items
-    (let ((inhibit-read-only t))
-      (save-excursion
-        (goto-char (point-max))
-        (insert "\n  No videos played yet.\n"))))
-  (force-mode-line-update))
+  (yt-list-print))
 
 (defun yt-history--refresh (&rest _)
   "Print the history buffer again shortly, once for a burst of changes.
@@ -203,24 +182,13 @@ forgets them too."
     (yt-history--print-now)
     (message "Cleared the history")))
 
-(defun yt-history-filter (query)
-  "Show only the videos with every word of QUERY in their title or channel.
-An empty QUERY shows all of them."
-  (interactive (list (read-string "Filter history: " yt-history--query
-                                  (yt-minibuffer-history 'yt-filter-history))) yt-history-mode)
-  (setq yt-history--query (and (not (string-blank-p query)) query))
-  (yt-history--print))
-
 (defvar-keymap yt-history-mode-map
   :doc "Keymap for `yt-history-mode'."
-  :parent (make-composed-keymap yt-video-actions-map tabulated-list-mode-map)
+  :parent (make-composed-keymap yt-video-actions-map yt-list-mode-map)
   "d" #'yt-history-remove
-  "D" #'yt-history-clear
-  "/" #'yt-history-filter
-  "s" #'yt-history-filter
-  "g" #'revert-buffer)
+  "D" #'yt-history-clear)
 
-(define-derived-mode yt-history-mode tabulated-list-mode "yt-history"
+(define-derived-mode yt-history-mode yt-list-mode "yt-history"
   "Major mode for the list of videos you played.
 \"Played\" is how long ago you played a video, and \"Progress\"
 where you stopped, or whether you watched it.  The video keys of
@@ -230,9 +198,8 @@ the feed work here too.
   :group 'yt-player
   :interactive nil
   (setq tabulated-list-entries #'yt-history--entries
-        tabulated-list-sort-key nil
-        tabulated-list-use-header-line nil
-        header-line-format '(:eval (yt-history--header-line)))
+        yt-list-header-function #'yt-history--header-parts
+        yt-list-empty-function (lambda () "No videos played yet."))
   (setq-local yt-video-at-point-function #'yt-history--video-at-point)
   (setq-local yt-list-reprint-function #'yt-history--print)
   (setq-local revert-buffer-function (lambda (&rest _) (yt-history--print)))

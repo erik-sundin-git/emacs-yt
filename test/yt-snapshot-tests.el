@@ -69,8 +69,13 @@ YTDLP is bound to the fake yt-dlp's directory."
     (yt-snapshot-test--channels)
     (with-current-buffer (yt-channels)
       (yt-test-snapshot "channels")
-      (yt-channels-filter "two")
-      (yt-test-snapshot "channels-filtered"))))
+      (yt-list-filter "two")
+      (yt-test-snapshot "channels-filtered")
+      ;; The feed's syntax: !word excludes.
+      (yt-list-filter "!one")
+      (should (equal (yt-feed--printed-ids) '("UCfakechannel00000000002")))
+      (yt-list-filter "nothing-matches")
+      (yt-test-snapshot "channels-no-match"))))
 
 (ert-deftest yt-snapshot-playlists ()
   "The saved playlists, then none."

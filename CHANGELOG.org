@@ -1,6 +1,11 @@
 #+title: yt changelog
 
 * Unreleased
+- The channels, playlists and history lists filter like the feed: words
+  must all match, =@word= matches the channel, =!word= excludes.  A
+  filter that matches nothing says so.  Their header lines put the
+  filter first and count in the singular when there is one ("1 video
+  played").
 - =YT_LIVE=1 nix run .#smoke= checks yt against the real YouTube with the
   sandbox's sign-in (yt-dlp version, session, feed and the fields yt
   reads, resolving, SponsorBlock), printing counts only.

@@ -80,10 +80,10 @@ YTDLP is bound to the scenario directory of the fake yt-dlp."
 
 (ert-deftest yt-feed-parse-query ()
   "Queries split into lower-cased terms of three kinds."
-  (should (equal (yt-feed--parse-query "Emacs  @Prot !Live @ !")
+  (should (equal (yt-list-parse-query "Emacs  @Prot !Live @ !")
                  '((any . "emacs") (channel . "prot") (not . "live"))))
-  (should-not (yt-feed--parse-query "  "))
-  (should-not (yt-feed--parse-query nil)))
+  (should-not (yt-list-parse-query "  "))
+  (should-not (yt-list-parse-query nil)))
 
 (ert-deftest yt-feed-match-p ()
   "Filters match on title, channel, exclusions and hidden kinds."
@@ -92,7 +92,7 @@ YTDLP is bound to the scenario directory of the fake yt-dlp."
         (short (yt-video--make :id "s" :title "Quick" :short-p t))
         (live (yt-video--make :id "l" :title "Stream" :live-status 'is_upcoming)))
     (cl-flet ((match (query &optional filter video*)
-                (yt-feed--match-p (or video* video) (yt-feed--parse-query query)
+                (yt-feed--match-p (or video* video) (yt-list-parse-query query)
                                   filter)))
       (should (match "org TIPS"))
       (should (match "prot"))

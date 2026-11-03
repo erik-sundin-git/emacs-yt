@@ -55,61 +55,6 @@
 
 ;;;; Faces
 
-(defface yt-feed-age '((t :inherit shadow))
-  "Face for the age of a video."
-  :group 'yt-feed
-  :package-version '(yt . "0.1.0"))
-
-(defface yt-feed-duration '((t :inherit shadow))
-  "Face for the duration of a video."
-  :group 'yt-feed
-  :package-version '(yt . "0.1.0"))
-
-(defface yt-feed-channel '((t :inherit font-lock-type-face))
-  "Face for the channel of a video."
-  :group 'yt-feed
-  :package-version '(yt . "0.1.0"))
-
-(defface yt-feed-title '((t :inherit default))
-  "Face for the title of a video."
-  :group 'yt-feed
-  :package-version '(yt . "0.1.0"))
-
-(defface yt-feed-title-unwatched '((t :inherit yt-feed-title))
-  "Face for the title of a video you have not watched."
-  :group 'yt-feed
-  :package-version '(yt . "0.1.0"))
-
-(defface yt-feed-title-watched '((t :inherit (shadow yt-feed-title)))
-  "Face for the title of a video you have watched."
-  :group 'yt-feed
-  :package-version '(yt . "0.1.0"))
-
-(defface yt-feed-live '((t :inherit error))
-  "Face for videos that are live now."
-  :group 'yt-feed
-  :package-version '(yt . "0.1.0"))
-
-(defface yt-feed-upcoming '((t :inherit warning))
-  "Face for upcoming premieres and live streams."
-  :group 'yt-feed
-  :package-version '(yt . "0.1.0"))
-
-(defface yt-feed-short '((t :inherit font-lock-comment-face))
-  "Face for the badge of a Short."
-  :group 'yt-feed
-  :package-version '(yt . "0.1.0"))
-
-(defface yt-feed-new-marker '((t :inherit success))
-  "Face for the marker of a video you have not watched."
-  :group 'yt-feed
-  :package-version '(yt . "0.1.0"))
-
-(defface yt-feed-arrived-marker '((t :inherit warning))
-  "Face for the marker of a video that arrived since your last visit."
-  :group 'yt-feed
-  :package-version '(yt . "0.2.0"))
-
 (defvar yt-feed-visit-gap 600
   "Seconds without opening the subscription feed that end a visit.
 Videos that arrived since the visit before are marked as new.")
@@ -142,7 +87,7 @@ playlist, and (search QUERY) for search results.")
 
 (defvar-local yt-feed--filter nil
   "The active filter, a plist.
-:query is the query string, see `yt-feed--parse-query'; :channel is
+:query is the query string, see `yt-list-parse-query'; :channel is
 \(ID . NAME) of the channel shown; :hide-watched, :hide-shorts and
 :hide-upcoming are booleans.")
 
@@ -225,28 +170,9 @@ the cached feed instead of being merged into it."
 
 ;;;; Filters
 
-(defun yt-feed--parse-query (query)
-  "Return the terms of the filter QUERY, a string, or nil.
-Terms are separated by spaces and all must match.  A term matches
-the title or channel; \"@term\" matches only the channel, and
-\"!term\" matches videos whose title and channel lack it.  Each
-term is returned as (KIND . TEXT), KIND being `any', `channel' or
-`not', with TEXT in lower case."
-  (delq nil
-        (mapcar (lambda (word)
-                  (let ((kind (pcase (aref word 0)
-                                (?@ 'channel)
-                                (?! 'not)
-                                (_ 'any))))
-                    (unless (eq kind 'any)
-                      (setq word (substring word 1)))
-                    (unless (string-empty-p word)
-                      (cons kind (downcase word)))))
-                (split-string (or query "") "[ \t]+" t))))
-
 (defun yt-feed--match-p (video terms filter)
   "Return non-nil if VIDEO passes the query TERMS and the FILTER plist.
-TERMS come from `yt-feed--parse-query'; see `yt-feed--filter' for
+TERMS come from `yt-list-parse-query'; see `yt-feed--filter' for
 FILTER."
   (let ((title (downcase (or (yt-video-title video) "")))
         (channel (downcase (or (yt-video-channel video) "")))
@@ -260,15 +186,7 @@ FILTER."
              (if (car shown)
                  (equal (car shown) (yt-video-channel-id video))
                (equal (cdr shown) (yt-video-channel video))))
-         (seq-every-p (lambda (term)
-                        (let ((text (cdr term)))
-                          (pcase (car term)
-                            ('channel (string-search text channel))
-                            ('not (not (or (string-search text title)
-                                           (string-search text channel))))
-                            (_ (or (string-search text title)
-                                   (string-search text channel))))))
-                      terms))))
+         (yt-list-match-p terms title channel))))
 
 (defun yt-feed--arrived-p (video)
   "Return non-nil if VIDEO arrived since your last visit to the feed."
@@ -294,7 +212,7 @@ less than `yt-feed-visit-gap' seconds ago, which is the same visit."
 
 (defun yt-feed--filtered-videos ()
   "Return the videos of this buffer that pass the filter, in feed order."
-  (let ((terms (yt-feed--parse-query (plist-get yt-feed--filter :query))))
+  (let ((terms (yt-list-parse-query (plist-get yt-feed--filter :query))))
     (seq-filter (lambda (video) (yt-feed--match-p video terms yt-feed--filter))
                 yt-feed--videos)))
 
@@ -588,11 +506,6 @@ Stop the timer when no feed buffer is left."
   "<header-line> <mouse-1>" #'yt-login
   "<header-line> <mouse-2>" #'yt-login)
 
-(defun yt-feed--ago (time)
-  "Return how long ago TIME was, for the header line."
-  (let ((age (yt-video-format-age time)))
-    (if (equal age "now") "just now" (concat age " ago"))))
-
 (defun yt-feed--header-line ()
   "Return the header line of a feed buffer."
   (let* ((state (yt-auth-state))
@@ -622,12 +535,12 @@ Stop the timer when no feed buffer is left."
            (cond (yt-feed--status (propertize yt-feed--status 'face 'shadow))
                  (yt-feed--error (propertize yt-feed--error 'face 'warning)))
            (if yt-feed--refreshed-at
-               (format "updated %s" (yt-feed--ago yt-feed--refreshed-at))
+               (format "updated %s" (yt-list-ago yt-feed--refreshed-at))
              "never updated")
            (when-let* ((visit yt-feed--last-visit)
                        (arrived (yt-feed--arrived-count))
                        ((> arrived 0)))
-             (propertize (format "◆ %d new since %s" arrived (yt-feed--ago visit))
+             (propertize (format "◆ %d new since %s" arrived (yt-list-ago visit))
                          'face 'yt-feed-arrived-marker))
            (yt-feed--filter-description)
            (if (= count total)

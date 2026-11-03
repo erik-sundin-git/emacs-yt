@@ -31,7 +31,7 @@
 (defun yt-playlists-test--wait (buffer)
   "Wait until BUFFER, a playlists or feed buffer, is not fetching."
   (yt-test-wait-until
-   (lambda () (not (or (buffer-local-value 'yt-playlists--refreshing buffer)
+   (lambda () (not (or (buffer-local-value 'yt-list--refreshing buffer)
                        (buffer-local-value 'yt-feed--refreshing buffer))))
    "fetch")
   buffer)

@@ -23,6 +23,11 @@
 ;; What the yt list buffers (feed, channels, playlists, history, the
 ;; player's playlist) share:
 ;;
+;; - The faces of their columns.
+;; - `yt-list-mode', the base of the channels, playlists and history
+;;   lists: a header line and an empty-list message built from parts,
+;;   a filter in the feed's syntax (words, @channel, !exclude), and the
+;;   state of a fetch in progress.
 ;; - Columns that fit the window: the Title column takes the width the
 ;;   other columns leave, so that age and duration stay visible in a
 ;;   narrow window and long titles use a wide one.
@@ -33,7 +38,69 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'seq)
+(require 'subr-x)
 (require 'tabulated-list)
+(require 'yt)
+(require 'yt-video)
+
+;;;; Faces
+
+(defface yt-feed-age '((t :inherit shadow))
+  "Face for the age of a video."
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
+(defface yt-feed-duration '((t :inherit shadow))
+  "Face for the duration of a video."
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
+(defface yt-feed-channel '((t :inherit font-lock-type-face))
+  "Face for the channel of a video."
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
+(defface yt-feed-title '((t :inherit default))
+  "Face for the title of a video."
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
+(defface yt-feed-title-unwatched '((t :inherit yt-feed-title))
+  "Face for the title of a video you have not watched."
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
+(defface yt-feed-title-watched '((t :inherit (shadow yt-feed-title)))
+  "Face for the title of a video you have watched."
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
+(defface yt-feed-live '((t :inherit error))
+  "Face for videos that are live now."
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
+(defface yt-feed-upcoming '((t :inherit warning))
+  "Face for upcoming premieres and live streams."
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
+(defface yt-feed-short '((t :inherit font-lock-comment-face))
+  "Face for the badge of a Short."
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
+(defface yt-feed-new-marker '((t :inherit success))
+  "Face for the marker of a video you have not watched."
+  :group 'yt-feed
+  :package-version '(yt . "0.1.0"))
+
+(defface yt-feed-arrived-marker '((t :inherit warning))
+  "Face for the marker of a video that arrived since your last visit."
+  :group 'yt-feed
+  :package-version '(yt . "0.2.0"))
+
 
 ;;;; Columns that fit the window
 
@@ -45,8 +112,8 @@
 `yt-list-fit-columns' fits them to the window.")
 
 (defvar-local yt-list-reprint-function nil
-  "Function that prints this buffer again after its columns changed.
-nil means `tabulated-list-print' keeping point.")
+  "Function that prints this buffer again, after its columns or filter changed.
+nil means `yt-list-print'.")
 
 (defvar-local yt-list--fit-timer nil
   "Timer that fits this buffer's columns to its window, or nil.")
@@ -111,9 +178,141 @@ They are fitted again whenever the window changes size."
           (unless (equal format tabulated-list-format)
             (setq tabulated-list-format format)
             (tabulated-list-init-header)
-            (if yt-list-reprint-function
-                (funcall yt-list-reprint-function)
-              (tabulated-list-print t))))))))
+            (yt-list-reprint)))))))
+
+;;;; The base mode of the lists
+
+(defvar-local yt-list--query nil
+  "The filter of this list, a string, or nil.")
+
+(defvar-local yt-list--refreshing nil
+  "Non-nil while this list is being fetched.")
+
+(defvar-local yt-list--error nil
+  "The message of this list's last failed fetch, or nil.")
+
+(defvar-local yt-list-header-function nil
+  "Function returning the parts of this list's header line, in order.
+Parts that are nil are left out.")
+
+(defvar-local yt-list-empty-function nil
+  "Function returning what an empty list says, or nil.")
+
+(defun yt-list-count (n thing)
+  "Return N followed by THING, in the plural unless N is 1."
+  (format "%d %s%s" n thing (if (= n 1) "" "s")))
+
+(defun yt-list-ago (time)
+  "Return how long ago TIME was, for a header line."
+  (let ((age (yt-video-format-age time)))
+    (if (equal age "now") "just now" (concat age " ago"))))
+
+(defun yt-list-parse-query (query)
+  "Return the terms of the filter QUERY, a string, or nil.
+Terms are separated by spaces and all must match.  A term matches
+the title or channel; \"@term\" matches only the channel, and
+\"!term\" matches what lacks it in both.  Each term is returned as
+\(KIND . TEXT), KIND being `any', `channel' or `not', with TEXT in
+lower case."
+  (delq nil
+        (mapcar (lambda (word)
+                  (let ((kind (pcase (aref word 0)
+                                (?@ 'channel)
+                                (?! 'not)
+                                (_ 'any))))
+                    (unless (eq kind 'any)
+                      (setq word (substring word 1)))
+                    (unless (string-empty-p word)
+                      (cons kind (downcase word)))))
+                (split-string (or query "") "[ \t]+" t))))
+
+(defun yt-list-match-p (terms title channel)
+  "Return non-nil if TITLE and CHANNEL, in lower case, pass the TERMS.
+TERMS come from `yt-list-parse-query'."
+  (seq-every-p (lambda (term)
+                 (let ((text (cdr term)))
+                   (pcase (car term)
+                     ('channel (string-search text channel))
+                     ('not (not (or (string-search text title)
+                                    (string-search text channel))))
+                     (_ (or (string-search text title)
+                            (string-search text channel))))))
+               terms))
+
+(defun yt-list-query-terms ()
+  "Return the terms of this list's filter."
+  (yt-list-parse-query yt-list--query))
+
+(defun yt-list-header-line ()
+  "Return this list's header line, from `yt-list-header-function'.
+The state of a fetch and the filter come first."
+  (concat " "
+          (string-join
+           (delq nil (append (list (and yt-list--refreshing "Fetching…")
+                                   (and yt-list--error
+                                        (propertize yt-list--error 'face 'warning))
+                                   (and yt-list--query
+                                        (format "filter “%s”" yt-list--query)))
+                             (and yt-list-header-function
+                                  (funcall yt-list-header-function))))
+           "  ·  ")))
+
+(defun yt-list--rows-p ()
+  "Return non-nil if this list shows a row."
+  (save-excursion
+    (goto-char (point-min))
+    (let (found)
+      (while (and (not found) (not (eobp)))
+        (setq found (tabulated-list-get-id))
+        (forward-line 1))
+      found)))
+
+(defun yt-list-print ()
+  "Print this list again, keeping point, and explain it if empty."
+  (tabulated-list-print t)
+  (unless (or yt-list--refreshing (yt-list--rows-p))
+    (when-let* ((message (cond (yt-list--error)
+                               (yt-list--query
+                                (substitute-command-keys
+                                 (format "Nothing matches the filter “%s”.  \\[yt-list-filter] changes it."
+                                         yt-list--query)))
+                               (yt-list-empty-function (funcall yt-list-empty-function)))))
+      (let ((inhibit-read-only t))
+        (save-excursion
+          (goto-char (point-max))
+          (insert "\n  " message "\n")))))
+  (force-mode-line-update))
+
+(defun yt-list-reprint ()
+  "Print this buffer again, with `yt-list-reprint-function' if it has one."
+  (if yt-list-reprint-function
+      (funcall yt-list-reprint-function)
+    (yt-list-print)))
+
+(defun yt-list-filter (query)
+  "Show only the rows that match QUERY; an empty QUERY shows them all.
+Words must all be in the title or the channel; @word matches only the
+channel, and !word excludes."
+  (interactive (list (read-string "Filter (words, @channel, !exclude): " yt-list--query
+                                  (yt-minibuffer-history 'yt-filter-history)))
+               yt-list-mode)
+  (setq yt-list--query (and (not (string-blank-p query)) query))
+  (yt-list-reprint))
+
+(defvar-keymap yt-list-mode-map
+  :doc "Keymap shared by the yt lists derived from `yt-list-mode'."
+  :parent tabulated-list-mode-map
+  "/" #'yt-list-filter
+  "s" #'yt-list-filter
+  "g" #'revert-buffer)
+
+(define-derived-mode yt-list-mode tabulated-list-mode "yt-list"
+  "Base mode of yt's lists of channels, playlists and played videos."
+  :group 'yt-feed
+  :interactive nil
+  (setq tabulated-list-use-header-line nil
+        tabulated-list-sort-key nil
+        header-line-format '(:eval (yt-list-header-line))))
 
 ;;;; Integrations
 

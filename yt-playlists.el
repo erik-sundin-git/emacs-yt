@@ -36,6 +36,7 @@
 (require 'yt-cache)
 (require 'yt-ytdlp)
 (require 'yt-auth)
+(require 'yt-list)
 (require 'yt-feed)
 
 (defconst yt-saved-playlists-buffer "*yt: Saved playlists*"
@@ -46,15 +47,6 @@
 
 (defvar-local yt-playlists--playlists nil
   "The playlists of this buffer, plists in order.")
-
-(defvar-local yt-playlists--query nil
-  "The filter on playlist titles and channels, or nil.")
-
-(defvar-local yt-playlists--refreshing nil
-  "Non-nil while the channel's playlists are being fetched.")
-
-(defvar-local yt-playlists--error nil
-  "The message of the last failed fetch, or nil.")
 
 (defun yt-playlists--from-json (entry)
   "Return the playlist plist for ENTRY of a channel's playlists, or nil."
@@ -77,7 +69,7 @@
 
 (defun yt-playlists--entries ()
   "Return the tabulated-list entries of the playlists passing the filter."
-  (let ((query (and yt-playlists--query (downcase yt-playlists--query))))
+  (let ((terms (yt-list-query-terms)))
     (delq nil
           (mapcar
            (lambda (playlist)
@@ -85,8 +77,7 @@
                     (title (plist-get playlist :title))
                     (channel (or (plist-get playlist :channel) ""))
                     (new (yt-playlists--unwatched id)))
-               (when (or (not query)
-                         (string-search query (downcase (concat title " " channel))))
+               (when (yt-list-match-p terms (downcase title) (downcase channel))
                  (list id
                        (vector (if (yt-cache-playlist-saved-p id)
                                    (propertize "★" 'face 'yt-feed-new-marker)
@@ -98,36 +89,18 @@
                                  ""))))))
            yt-playlists--playlists))))
 
-(defun yt-playlists--header-line ()
-  "Return the header line of a playlists buffer."
-  (concat " "
-          (string-join
-           (delq nil
-                 (list (and yt-playlists--refreshing "Fetching the playlists…")
-                       (and yt-playlists--error
-                            (propertize yt-playlists--error 'face 'warning))
-                       (and yt-playlists--query
-                            (format "filter “%s”" yt-playlists--query))
-                       (format "%d playlists" (length yt-playlists--playlists))
-                       (substitute-command-keys
-                        "\\<yt-playlists-mode-map>\\[yt-playlists-save] saves, \\[yt-playlists-forget] forgets")))
-           "  ·  ")))
+(defun yt-playlists--header-parts ()
+  "Return the parts of a playlists list's header line."
+  (list (yt-list-count (length yt-playlists--playlists) "playlist")
+        (substitute-command-keys
+         "\\<yt-playlists-mode-map>\\[yt-playlists-save] saves, \\[yt-playlists-forget] forgets")))
 
-(defun yt-playlists--print ()
-  "Print the playlists again, keeping point on the same playlist."
-  (tabulated-list-print t)
-  (when (and (not yt-playlists--playlists) (not yt-playlists--refreshing))
-    (let ((inhibit-read-only t))
-      (save-excursion
-        (goto-char (point-max))
-        (insert "\n  "
-                (or yt-playlists--error
-                    (if (eq yt-playlists--source 'saved)
-                        (substitute-command-keys
-                         "No saved playlists.  Press \\<yt-playlists-mode-map>\\[yt-playlists-save] on a channel's playlist to save it.")
-                      "This channel has no playlists."))
-                "\n"))))
-  (force-mode-line-update))
+(defun yt-playlists--empty ()
+  "Return what an empty playlists list says."
+  (if (eq yt-playlists--source 'saved)
+      (substitute-command-keys
+       "No saved playlists.  Press \\<yt-playlists-mode-map>\\[yt-playlists-save] on a channel's playlist to save it.")
+    "This channel has no playlists."))
 
 (defun yt-playlists-refresh ()
   "Fetch the channel's playlists again, or reread the saved ones."
@@ -135,12 +108,12 @@
   (pcase yt-playlists--source
     ('saved
      (setq yt-playlists--playlists (yt-cache-saved-playlists))
-     (yt-playlists--print))
+     (yt-list-print))
     (`(channel ,_id ,url ,_name)
      (let ((buffer (current-buffer)))
-       (setq yt-playlists--refreshing t
-             yt-playlists--error nil)
-       (yt-playlists--print)
+       (setq yt-list--refreshing t
+             yt-list--error nil)
+       (yt-list-print)
        (yt-auth-run
         (yt-ytdlp-channel-playlists-args url)
         :parse 'json :key (cons 'yt-playlists url) :force t
@@ -151,16 +124,16 @@
               (setq yt-playlists--playlists
                     (delq nil (mapcar #'yt-playlists--from-json
                                       (plist-get value :entries)))
-                    yt-playlists--refreshing nil)
-              (yt-playlists--print))))
+                    yt-list--refreshing nil)
+              (yt-list-print))))
         :on-error
         (lambda (err)
           (unless (eq (plist-get err :type) 'cancelled)
             (when (buffer-live-p buffer)
               (with-current-buffer buffer
-                (setq yt-playlists--refreshing nil
-                      yt-playlists--error (plist-get err :message))
-                (yt-playlists--print)))
+                (setq yt-list--refreshing nil
+                      yt-list--error (plist-get err :message))
+                (yt-list-print)))
             (message "%s" (plist-get err :message)))))))))
 
 (defun yt-playlists--at-point ()
@@ -195,7 +168,7 @@ once its videos arrive."
   "Save PLAYLIST, the playlist at point, in yt."
   (interactive (list (yt-playlists--at-point)) yt-playlists-mode)
   (yt-cache-save-playlist playlist)
-  (yt-playlists--print)
+  (yt-list-print)
   (message "Saved the playlist “%s”" (plist-get playlist :title)))
 
 (defun yt-playlists-forget (playlist)
@@ -204,7 +177,7 @@ once its videos arrive."
   (yt-cache-forget-playlist (plist-get playlist :id))
   (when (eq yt-playlists--source 'saved)
     (setq yt-playlists--playlists (yt-cache-saved-playlists)))
-  (yt-playlists--print)
+  (yt-list-print)
   (message "Removed the playlist “%s” from the saved playlists"
            (plist-get playlist :title)))
 
@@ -213,29 +186,18 @@ once its videos arrive."
   (interactive (list (yt-playlists--at-point)) yt-playlists-mode)
   (yt-browse-url (plist-get playlist :url)))
 
-(defun yt-playlists-filter (query)
-  "Show only the playlists with QUERY in their title or channel.
-An empty QUERY shows all of them."
-  (interactive (list (read-string "Filter playlists: " yt-playlists--query
-                                  (yt-minibuffer-history 'yt-filter-history)))
-               yt-playlists-mode)
-  (setq yt-playlists--query (and (not (string-blank-p query)) query))
-  (yt-playlists--print))
-
 (defvar-keymap yt-playlists-mode-map
   :doc "Keymap for `yt-playlists-mode'."
-  :parent tabulated-list-mode-map
+  :parent yt-list-mode-map
   "RET" #'yt-playlists-open
   "z" #'yt-playlists-shuffle
   "+" #'yt-playlists-save
   "-" #'yt-playlists-forget
   "d" #'yt-playlists-forget
   "b" #'yt-playlists-browse
-  "/" #'yt-playlists-filter
-  "s" #'yt-playlists-filter
   "g" #'yt-playlists-refresh)
 
-(define-derived-mode yt-playlists-mode tabulated-list-mode "yt-playlists"
+(define-derived-mode yt-playlists-mode yt-list-mode "yt-playlists"
   "Major mode for a list of YouTube playlists.
 A ★ marks the playlists saved in yt.  \"New\" is the number of a
 playlist's videos you have not watched, once it was opened.
@@ -246,8 +208,8 @@ playlist's videos you have not watched, once it was opened.
   (setq tabulated-list-format [(" " 1 nil) ("Playlist" 50 t) ("Channel" 24 t)
                                ("New" 4 nil :right-align t)]
         tabulated-list-entries #'yt-playlists--entries
-        tabulated-list-use-header-line nil
-        header-line-format '(:eval (yt-playlists--header-line)))
+        yt-list-header-function #'yt-playlists--header-parts
+        yt-list-empty-function #'yt-playlists--empty)
   (setq-local revert-buffer-function (lambda (&rest _) (yt-playlists-refresh)))
   (tabulated-list-init-header))
 
@@ -265,7 +227,7 @@ A channel's playlists are fetched when the buffer is new."
     (with-current-buffer buffer
       (if (or new (eq source 'saved))
           (yt-playlists-refresh)
-        (yt-playlists--print)))
+        (yt-list-print)))
     (pop-to-buffer-same-window buffer)
     buffer))
 

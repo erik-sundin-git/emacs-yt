@@ -36,6 +36,7 @@
 (require 'yt-cache)
 (require 'yt-ytdlp)
 (require 'yt-auth)
+(require 'yt-list)
 (require 'yt-feed)
 
 (declare-function yt-channel-playlists "yt-playlists" (id url name))
@@ -49,15 +50,6 @@
 
 (defvar-local yt-channels--channels nil
   "The channels of this buffer, plists in YouTube's order.")
-
-(defvar-local yt-channels--query nil
-  "The filter on channel names, or nil.")
-
-(defvar-local yt-channels--refreshing nil
-  "Non-nil while the channel list is being fetched.")
-
-(defvar-local yt-channels--error nil
-  "The message of the last failed fetch, or nil.")
 
 (defvar-local yt-channels--stats nil
   "The statistics of the channels printed last; see `yt-channels--stats'.")
@@ -95,14 +87,14 @@ They are computed from the cached subscription feed."
   "Return the tabulated-list entries of the channels passing the filter."
   (let ((stats (setq yt-channels--stats (yt-channels--stats)))
         (now (yt--now))
-        (query (and yt-channels--query (downcase yt-channels--query))))
+        (terms (yt-list-query-terms)))
     (delq nil
           (mapcar
            (lambda (channel)
              (let* ((id (plist-get channel :id))
                     (name (plist-get channel :name))
                     (stat (gethash id stats)))
-               (when (or (not query) (string-search query (downcase name)))
+               (when (yt-list-match-p terms (downcase name) (downcase name))
                  (list id
                        (vector (propertize name 'face 'yt-feed-channel)
                                (if (and stat (> (car stat) 0))
@@ -126,42 +118,25 @@ They are computed from the cached subscription feed."
   (> (or (cdr (gethash (car a) yt-channels--stats)) 0)
      (or (cdr (gethash (car b) yt-channels--stats)) 0)))
 
-(defun yt-channels--header-line ()
-  "Return the header line of the channels buffer."
+(defun yt-channels--header-parts ()
+  "Return the parts of the channels list's header line."
   (let ((refreshed (yt-cache-meta "refreshed:channels")))
-    (concat " "
-            (string-join
-             (delq nil
-                   (list (and yt-channels--refreshing "Fetching the channels…")
-                         (and yt-channels--error
-                              (propertize yt-channels--error 'face 'warning))
-                         (if refreshed
-                             (format "updated %s" (yt-feed--ago refreshed))
-                           "never updated")
-                         (and yt-channels--query
-                              (format "filter “%s”" yt-channels--query))
-                         (format "%d channels" (length yt-channels--channels))))
-             "  ·  "))))
+    (list (if refreshed
+              (format "updated %s" (yt-list-ago refreshed))
+            "never updated")
+          (yt-list-count (length yt-channels--channels) "channel"))))
 
-(defun yt-channels--print ()
-  "Print the channels again, keeping point on the same channel."
-  (tabulated-list-print t)
-  (when (and (not yt-channels--channels) (not yt-channels--refreshing))
-    (let ((inhibit-read-only t))
-      (save-excursion
-        (goto-char (point-max))
-        (insert "\n  " (or yt-channels--error
-                           (substitute-command-keys
-                            "No channels yet.  Press \\[yt-channels-refresh] to fetch them."))
-                "\n"))))
-  (force-mode-line-update))
+(defun yt-channels--empty ()
+  "Return what an empty channels list says."
+  (substitute-command-keys
+   "No channels yet.  Press \\<yt-channels-mode-map>\\[yt-channels-refresh] to fetch them."))
 
 (defun yt-channels-refresh ()
   "Fetch the list of subscribed channels again."
   (interactive nil yt-channels-mode)
   (let ((buffer (current-buffer)))
-    (setq yt-channels--refreshing t
-          yt-channels--error nil)
+    (setq yt-list--refreshing t
+          yt-list--error nil)
     (force-mode-line-update)
     (yt-auth-run
      (yt-ytdlp-channels-args)
@@ -175,17 +150,17 @@ They are computed from the cached subscription feed."
          (when (buffer-live-p buffer)
            (with-current-buffer buffer
              (setq yt-channels--channels channels
-                   yt-channels--refreshing nil)
-             (yt-channels--print)))
+                   yt-list--refreshing nil)
+             (yt-list-print)))
          (message "yt: %d channels" (length channels))))
      :on-error
      (lambda (err)
        (unless (eq (plist-get err :type) 'cancelled)
          (when (buffer-live-p buffer)
            (with-current-buffer buffer
-             (setq yt-channels--refreshing nil
-                   yt-channels--error (plist-get err :message))
-             (yt-channels--print)))
+             (setq yt-list--refreshing nil
+                   yt-list--error (plist-get err :message))
+             (yt-list-print)))
          (message "%s" (plist-get err :message)))))))
 
 (defun yt-channels--at-point ()
@@ -219,32 +194,21 @@ They are computed from the cached subscription feed."
     (with-current-buffer buffer
       (when (derived-mode-p 'yt-channels-mode)
         (setq yt-channels--channels (yt-cache-channels))
-        (yt-channels--print)))))
-
-(defun yt-channels-filter (query)
-  "Show only the channels with QUERY in their name.
-An empty QUERY shows all channels."
-  (interactive (list (read-string "Filter channels: " yt-channels--query
-                                  (yt-minibuffer-history 'yt-filter-history)))
-               yt-channels-mode)
-  (setq yt-channels--query (and (not (string-blank-p query)) query))
-  (yt-channels--print))
+        (yt-list-print)))))
 
 (defvar-keymap yt-channels-mode-map
   :doc "Keymap for `yt-channels-mode'."
-  :parent tabulated-list-mode-map
+  :parent yt-list-mode-map
   "RET" #'yt-channels-open
   "o" #'yt-channels-open
   "O" #'yt-channel-playlists
   "b" #'yt-channels-browse
   "-" #'yt-channels-unsubscribe
   "d" #'yt-channels-unsubscribe
-  "/" #'yt-channels-filter
-  "s" #'yt-channels-filter
   "g" #'yt-channels-refresh
   "L" #'yt-login)
 
-(define-derived-mode yt-channels-mode tabulated-list-mode "yt-channels"
+(define-derived-mode yt-channels-mode yt-list-mode "yt-channels"
   "Major mode for the list of channels you subscribe to.
 \"New\" is the number of their videos in the subscription feed you
 have not watched.
@@ -257,9 +221,8 @@ have not watched.
          ("New" 4 yt-channels--sort-unwatched :right-align t)
          ("Last upload" 12 yt-channels--sort-last-upload :right-align t)]
         tabulated-list-entries #'yt-channels--entries
-        tabulated-list-sort-key nil
-        tabulated-list-use-header-line nil
-        header-line-format '(:eval (yt-channels--header-line)))
+        yt-list-header-function #'yt-channels--header-parts
+        yt-list-empty-function #'yt-channels--empty)
   (setq-local revert-buffer-function (lambda (&rest _) (yt-channels-refresh)))
   (add-hook 'kill-buffer-hook (lambda () (yt-process-cancel '(yt-channels . list))) nil t)
   (add-hook 'yt-subscriptions-changed-functions #'yt-channels--subscriptions-changed)
@@ -276,10 +239,10 @@ than a day old."
       (unless (derived-mode-p 'yt-channels-mode)
         (yt-channels-mode)
         (setq yt-channels--channels (yt-cache-channels)))
-      (yt-channels--print))
+      (yt-list-print))
     (pop-to-buffer-same-window buffer)
     (let ((refreshed (yt-cache-meta "refreshed:channels")))
-      (unless (or yt-channels--refreshing
+      (unless (or yt-list--refreshing
                   (and refreshed (< (- (yt--now) refreshed) yt-channels-refresh-interval)))
         (yt-channels-refresh)))
     buffer))
