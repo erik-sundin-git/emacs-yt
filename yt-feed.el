@@ -628,6 +628,9 @@ INFO is from `yt-auth-run'; FULL is non-nil for a full refresh."
           (setq new nil))
         (when (and full (not (plist-get info :stopped)))
           (cl-pushnew yt-feed--source yt-feed--fully-refreshed :test #'equal))
+        ;; YouTube answered, so thumbnails that failed offline may work.
+        (when info
+          (yt-thumbs-forget-failures))
         (setq yt-feed--refreshed-at now
               yt-feed--refreshing nil
               yt-feed--status nil)

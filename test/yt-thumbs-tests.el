@@ -67,18 +67,39 @@ directory and the fake curl's directory."
       (yt-test-sleep 0.1)
       (should (= (length (yt-thumbs-test--calls curl)) 1)))))
 
-(ert-deftest yt-thumbs-failure-leaves-nothing-and-is-not-retried ()
-  "A failed download leaves no file and is not retried in the session."
+(ert-deftest yt-thumbs-failure-leaves-nothing-and-is-retried-later ()
+  "A failed download leaves no file, and is tried again after a while."
+  (yt-thumbs-test--with (_ytdlp curl)
+    (let* ((now 1000.0)
+           (yt--now-function (lambda () now)))
+      (yt-test-write (expand-file-name "fail" curl) "")
+      (yt-thumbs-fetch '("failedvideo"))
+      (yt-test-wait-until (lambda () (gethash "failedvideo" yt-thumbs--failed)) "failure")
+      (should-not (file-exists-p (yt-thumbs-file "failedvideo")))
+      (should-not (file-exists-p (concat (yt-thumbs-file "failedvideo") ".part")))
+      (should-not (yt-thumbs-image "failedvideo"))
+      ;; Not again at once...
+      (yt-thumbs-fetch '("failedvideo"))
+      (yt-test-wait-until (lambda () (not (yt-process-busy-p '(yt-thumbs . "failedvideo"))))
+                          "first download done")
+      (should (= (length (yt-thumbs-test--calls curl)) 1))
+      ;; ...but after `yt-thumbs-retry-after', once the network is back.
+      (delete-file (expand-file-name "fail" curl))
+      (setq now (+ now yt-thumbs-retry-after))
+      (yt-thumbs-fetch '("failedvideo"))
+      (yt-test-wait-until (lambda () (yt-thumbs-image "failedvideo")) "retry")
+      (should (= (length (yt-thumbs-test--calls curl)) 2)))))
+
+(ert-deftest yt-thumbs-failures-forgotten-after-refresh ()
+  "A refresh that reached YouTube lets failed thumbnails be tried again."
   (yt-thumbs-test--with (_ytdlp curl)
     (yt-test-write (expand-file-name "fail" curl) "")
     (yt-thumbs-fetch '("failedvideo"))
     (yt-test-wait-until (lambda () (gethash "failedvideo" yt-thumbs--failed)) "failure")
-    (should-not (file-exists-p (yt-thumbs-file "failedvideo")))
-    (should-not (file-exists-p (concat (yt-thumbs-file "failedvideo") ".part")))
-    (should-not (yt-thumbs-image "failedvideo"))
+    (yt-thumbs-forget-failures)
+    (delete-file (expand-file-name "fail" curl))
     (yt-thumbs-fetch '("failedvideo"))
-    (yt-test-sleep 0.1)
-    (should (= (length (yt-thumbs-test--calls curl)) 1))))
+    (yt-test-wait-until (lambda () (yt-thumbs-image "failedvideo")) "retry")))
 
 (ert-deftest yt-thumbs-queue-limit-and-dedup ()
   "At most four downloads run at once, and each video is fetched once."

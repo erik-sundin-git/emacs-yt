@@ -51,7 +51,10 @@ are scaled up.  A change shows in feed buffers after \\`t i' twice."
   "Ids of the videos whose thumbnails are queued or downloading.")
 
 (defvar yt-thumbs--failed (make-hash-table :test #'equal)
-  "Ids of the videos whose thumbnails failed to download in this session.")
+  "When the thumbnail of each video id last failed to download.")
+
+(defvar yt-thumbs-retry-after 600
+  "Seconds after which a thumbnail that failed to download is tried again.")
 
 (defvar yt-thumbs--directory nil
   "The thumbnail directory, once it was created and checked.")
@@ -100,7 +103,7 @@ are scaled up.  A change shows in feed buffers after \\`t i' twice."
                          (ignore-errors (delete-file part))
                          ;; A cancelled download may be requested again.
                          (unless cancelled
-                           (puthash id t yt-thumbs--failed)))
+                           (puthash id (yt--now) yt-thumbs--failed)))
                      (funcall done)))))
     (unless (yt-process-run
              yt-curl-program
@@ -118,14 +121,26 @@ are scaled up.  A change shows in feed buffers after \\`t i' twice."
       (remhash id yt-thumbs--pending)
       (funcall done))))
 
+(defun yt-thumbs--recently-failed-p (id)
+  "Return non-nil if the thumbnail of ID failed less than a while ago.
+See `yt-thumbs-retry-after'."
+  (when-let* ((failed (gethash id yt-thumbs--failed)))
+    (< (- (yt--now) failed) yt-thumbs-retry-after)))
+
+(defun yt-thumbs-forget-failures ()
+  "Let thumbnails that failed to download be tried again at once.
+The feed calls this after a refresh worked: the network is back."
+  (clrhash yt-thumbs--failed))
+
 (defun yt-thumbs-fetch (ids)
   "Download the thumbnails of the videos with IDS that are not cached.
-Each is downloaded once; failures are not retried in this session."
+Each is downloaded once; a failure is tried again after
+`yt-thumbs-retry-after' seconds, or after `yt-thumbs-forget-failures'."
   (unless yt-thumbs--curl-missing
     (dolist (id ids)
       (when (and (yt-thumbs--valid-id-p id)
                  (not (gethash id yt-thumbs--pending))
-                 (not (gethash id yt-thumbs--failed))
+                 (not (yt-thumbs--recently-failed-p id))
                  (not (file-exists-p (yt-thumbs-file id))))
         (puthash id t yt-thumbs--pending)
         (yt-process-queue-run yt-thumbs--queue

@@ -2,6 +2,9 @@
 
 * Unreleased
 ** After M7
+- Thumbnails that failed to download (offline, say) are tried again after
+  ten minutes, or at once after a refresh reached YouTube, instead of
+  never again in the session.
 - The history's Progress column shows where you stopped as soon as a
   video ends (it showed the previous position until the next change).
   The history buffer is printed once per burst of changes, and only when
