@@ -481,6 +481,8 @@ With a reason each; any can come back on request.
 - `/` is the only filter key; `s` stays one release as an alias (12.3).
 - The browse-url handler (9.7) is enabled in the user's config.
 - No release tags for now; the dotfiles keep following main (8.12).
+- After the second review: audio only on `M`, muting on `x`; the ceiling
+  is 9,000 lines and 37 options; M12 now, then ask before M11.
 
 ## What the review changed
 
