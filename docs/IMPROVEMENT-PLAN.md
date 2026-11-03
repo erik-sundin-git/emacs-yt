@@ -14,6 +14,14 @@ What the judges changed is summarized at the end.
 Effort: S (under half a day), M (a day or two), L (more).
 `file:line` references are at 584782d.
 
+## Progress
+
+- **M8, M9 and M10: done** (2026-11-03), commits e2e5841 to a267a54, each
+  with tests and a green CI run.  Found on the way: `yt-cache.el` used
+  `cl-struct-slot-value` without cl-macs at run time (caught by the new
+  load check), and a test that raced on busy CI runners.
+- **M11-M15: not started.**  Review the plan again before going on.
+
 ## Guiding decisions
 
 1. **Ship something visible every few commits.**  Bugs that hit
