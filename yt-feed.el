@@ -43,6 +43,7 @@
 (require 'yt-ytdlp)
 (require 'yt-auth)
 (require 'yt-player)
+(require 'yt-list)
 (require 'yt-thumbs)
 
 (declare-function yt-info "yt-info" (video))
@@ -907,14 +908,14 @@ to the channel of the video at point."
   "The columns of the feed without thumbnails.")
 
 (defun yt-feed--set-format ()
-  "Set the columns of this buffer, with a thumbnail column if shown."
-  (setq tabulated-list-format
-        (if (yt-feed--thumbnails-p)
-            (vconcat (list (list "" (1+ (ceiling (* yt-thumbs-height 16) (* 9 (max 1 (frame-char-width)))))
-                                 nil))
-                     yt-feed--format)
-          yt-feed--format))
-  (tabulated-list-init-header))
+  "Set the columns of this buffer, with a thumbnail column if shown.
+The Title column fits the window; see `yt-list-fit-columns'."
+  (yt-list-fit-columns
+   (if (yt-feed--thumbnails-p)
+       (vconcat (list (list "" (1+ (ceiling (* yt-thumbs-height 16) (* 9 (max 1 (frame-char-width)))))
+                            nil))
+                yt-feed--format)
+     yt-feed--format)))
 
 (defun yt-feed--visible-ids ()
   "Return the ids of the rows visible in windows, and of a few rows below."
@@ -984,6 +985,7 @@ the feed was updated, the active filters and the number of videos.
                                     :hide-upcoming yt-feed-hide-upcoming))
   (setq-local revert-buffer-function #'yt-feed--revert)
   (setq-local yt-video-at-point-function #'yt-feed-video-at-point)
+  (setq-local yt-list-reprint-function #'yt-feed--redisplay)
   (setq-local yt-feed--thumbnails yt-feed-thumbnails)
   (yt-feed--set-videos nil)
   (add-hook 'window-scroll-functions #'yt-feed--schedule-thumbnails nil t)

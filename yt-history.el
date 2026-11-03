@@ -36,6 +36,7 @@
 (require 'yt-video)
 (require 'yt-cache)
 (require 'yt-player)
+(require 'yt-list)
 (require 'yt-feed)
 
 (defconst yt-history-buffer "*yt: History*"
@@ -227,22 +228,21 @@ the feed work here too.
 \\{yt-history-mode-map}"
   :group 'yt-player
   :interactive nil
-  (setq tabulated-list-format
-        [("Channel" 20 t)
-         ("Title" 60 t)
-         ("Played" 7 yt-history--sort-played :right-align t)
-         ("Progress" 15 nil :right-align t)
-         ("Dur" 8 nil :right-align t)]
-        tabulated-list-entries #'yt-history--entries
+  (setq tabulated-list-entries #'yt-history--entries
         tabulated-list-sort-key nil
         tabulated-list-use-header-line nil
         header-line-format '(:eval (yt-history--header-line)))
   (setq-local yt-video-at-point-function #'yt-history--video-at-point)
+  (setq-local yt-list-reprint-function #'yt-history--print)
   (setq-local revert-buffer-function (lambda (&rest _) (yt-history--print)))
   (add-hook 'yt-history-changed-hook #'yt-history--refresh)
   (add-hook 'yt-watched-changed-functions #'yt-history--refresh)
   (add-hook 'window-buffer-change-functions #'yt-history--shown nil t)
-  (tabulated-list-init-header))
+  (yt-list-fit-columns [("Channel" 20 t)
+                        ("Title" 60 t)
+                        ("Played" 7 yt-history--sort-played :right-align t)
+                        ("Progress" 15 nil :right-align t)
+                        ("Dur" 8 nil :right-align t)]))
 
 ;;;###autoload
 (defun yt-history ()

@@ -870,14 +870,13 @@ Without a region, move to the next row."
 \{yt-playlist-mode-map}"
   :group 'yt-player
   :interactive nil
-  (setq tabulated-list-format [(" " 1 nil) ("#" 3 nil :right-align t)
-                               ("Channel" 20 nil) ("Title" 70 nil)
-                               ("Dur" 8 nil :right-align t)]
-        tabulated-list-entries #'yt-playlist--entries)
+  (setq tabulated-list-entries #'yt-playlist--entries)
   (setq-local yt-video-at-point-function #'yt-playlist--video-at-point)
   (setq-local revert-buffer-function (lambda (&rest _) (yt-playlist-refresh)))
   (add-hook 'yt-player-playlist-changed-hook #'yt-playlist--changed)
-  (tabulated-list-init-header))
+  (yt-list-fit-columns [(" " 1 nil) ("#" 3 nil :right-align t)
+                        ("Channel" 20 nil) ("Title" 70 nil)
+                        ("Dur" 8 nil :right-align t)]))
 
 ;;;###autoload
 (defun yt-player-playlist ()
