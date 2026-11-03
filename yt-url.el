@@ -112,7 +112,7 @@ URL rebuilt from the validated parts."
                     :url (concat "https://www.youtube.com/playlist?list=" id))))
            ((string-match "\\`/channel/\\(UC[A-Za-z0-9_-]\\{22\\}\\)\\(?:/.*\\)?\\'" path)
             (let ((id (match-string 1 path)))
-              (list 'channel :id id :url (concat "https://www.youtube.com/channel/" id))))
+              (list 'channel :id id :url (yt-channel-page-url id))))
            ((string-match "\\`/\\(@[A-Za-z0-9._-]+\\)\\(?:/.*\\)?\\'" path)
             (list 'channel :id nil
                   :url (concat "https://www.youtube.com/" (match-string 1 path))))))))))

@@ -65,7 +65,7 @@
                       id)
             :url (or (yt-video--string (plist-get entry :channel_url))
                      (yt-video--string (plist-get entry :url))
-                     (format "https://www.youtube.com/channel/%s" id))
+                     (yt-channel-page-url id))
             :followers (yt-video--number (plist-get entry :channel_follower_count))))))
 
 (defun yt-channels--stats ()
@@ -163,6 +163,13 @@ They are computed from the cached subscription feed."
              (yt-list-print)))
          (message "%s" (plist-get err :message)))))))
 
+(defun yt-channels--channel-at-point ()
+  "Return (ID URL NAME) of the channel at point, or nil."
+  (when-let* ((id (tabulated-list-get-id))
+              (channel (seq-find (lambda (c) (equal (plist-get c :id) id))
+                                 yt-channels--channels)))
+    (list id (plist-get channel :url) (plist-get channel :name))))
+
 (defun yt-channels--at-point ()
   "Return the channel at point, or signal a `user-error'."
   (let ((id (tabulated-list-get-id)))
@@ -221,6 +228,7 @@ have not watched.
          ("New" 4 yt-channels--sort-unwatched :right-align t)
          ("Last upload" 12 yt-channels--sort-last-upload :right-align t)]
         tabulated-list-entries #'yt-channels--entries
+        yt-channel-at-point-function #'yt-channels--channel-at-point
         yt-list-header-function #'yt-channels--header-parts
         yt-list-empty-function #'yt-channels--empty)
   (setq-local revert-buffer-function (lambda (&rest _) (yt-channels-refresh)))

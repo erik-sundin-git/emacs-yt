@@ -49,7 +49,6 @@
 (declare-function yt-info "yt-info" (video))
 (declare-function yt-channels "yt-channels" ())
 (declare-function yt-saved-playlists "yt-playlists" ())
-(declare-function yt-channels--at-point "yt-channels" ())
 (declare-function yt-subscribe "yt-subscribe" (id url name))
 (declare-function yt-unsubscribe "yt-subscribe" (id url name &optional confirm))
 
@@ -1026,7 +1025,7 @@ Interactively, use the video at point."
     (unless (or id url)
       (user-error "The channel of this video is not known"))
     (yt-feed-channel (or id url)
-                     (if id (format "https://www.youtube.com/channel/%s" id) url)
+                     (if id (yt-channel-page-url id) url)
                      (or (yt-video-channel video) id))))
 
 (defun yt-channel-at-point ()
@@ -1036,14 +1035,12 @@ this buffer shows, or the channel at point in the channels list."
   (or (when-let* ((video (yt-video-at-point))
                   (id (or (yt-video-channel-id video) (yt-video-channel-url video))))
         (list id (if (yt-video-channel-id video)
-                     (format "https://www.youtube.com/channel/%s" id)
+                     (yt-channel-page-url id)
                    (yt-video-channel-url video))
               (or (yt-video-channel video) id)))
       (pcase (bound-and-true-p yt-feed--source)
         (`(channel ,id ,url ,name) (list id url name)))
-      (when (and (derived-mode-p 'yt-channels-mode) (fboundp 'yt-channels--at-point))
-        (let ((channel (yt-channels--at-point)))
-          (list (plist-get channel :id) (plist-get channel :url) (plist-get channel :name))))
+      (and yt-channel-at-point-function (funcall yt-channel-at-point-function))
       (user-error "No channel here")))
 
 ;;;###autoload

@@ -148,6 +148,14 @@ all of them.")
   "Return the `yt-video' at point, or nil."
   (and yt-video-at-point-function (funcall yt-video-at-point-function)))
 
+(defvar-local yt-channel-at-point-function nil
+  "Function returning (ID URL NAME) of the channel at point, or nil.
+Lists of channels set it; see `yt-channel-at-point'.")
+
+(defun yt-channel-page-url (id)
+  "Return the URL of the page of the channel with ID."
+  (format "https://www.youtube.com/channel/%s" id))
+
 (defun yt-video--age-string (seconds)
   "Return SECONDS, a non-negative duration, in its largest whole unit."
   (cond ((< seconds 3600) (format "%dm" (/ seconds 60)))
