@@ -2,6 +2,9 @@
 
 * Unreleased
 ** After M7
+- A feed or channel list that is still empty after the cookies were
+  exported again is reported as "YouTube returned no videos", with the
+  hint to update yt-dlp, instead of "session expired".
 - After a bot check or rate limit, a successful =yt-login= or
   =yt-check-auth= ends the pause at once instead of after 15 minutes or an
   hour, and the feed's header line says "Paused until HH:MM" meanwhile.

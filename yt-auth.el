@@ -357,11 +357,13 @@ RETRIED is for internal use."
                                     argv))
              :on-success
              (lambda (value info)
-               (let ((class (if (yt-auth--empty-result-p source value info)
-                                'expired
-                              (yt-ytdlp-classify (plist-get info :stderr) source))))
+               (let* ((empty (yt-auth--empty-result-p source value info))
+                      (class (if empty
+                                 'expired
+                               (yt-ytdlp-classify (plist-get info :stderr) source))))
                  (if (memq class yt-auth--auth-classes)
-                     (funcall fail (append (list :type 'exit :class class) info))
+                     (funcall fail (append (list :type 'exit :class class :empty empty)
+                                           info))
                    (unwind-protect
                        (yt-auth--write-back copy generation)
                      (ignore-errors (delete-file copy)))
@@ -392,6 +394,17 @@ function that retries it, and ON-ERROR is the caller's callback."
                         (if ok
                             (funcall retry)
                           (yt-auth--report err result on-error)))))
+     ((and retried (plist-get err :empty))
+      ;; Still nothing with freshly exported cookies: more likely an
+      ;; account without subscriptions, or a yt-dlp that no longer
+      ;; understands YouTube, than an expired session.
+      (yt-auth--report
+       err
+       (list :class 'empty
+             :message (format "YouTube returned no %s with freshly exported cookies; %s"
+                              (if (eq source 'channels) "channels" "videos")
+                              (yt-ytdlp-update-hint)))
+       on-error))
      (t
       (when (memq class yt-auth--auth-classes)
         (yt-auth--set-state class)

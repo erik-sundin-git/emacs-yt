@@ -238,6 +238,24 @@ CALLBACK, if non-nil, is also passed to `yt-auth-export'."
     (should (= (yt-test-calls ytdlp) 2))
     (should (= (yt-test-calls export) 1))))
 
+(ert-deftest yt-auth-run-still-empty-after-export-is-not-expired ()
+  "Nothing even with fresh cookies is reported as empty, not expired."
+  (yt-test-with-scenario (ytdlp export)
+    (yt-auth-test--use-profile)
+    (yt-test-install-cookies)
+    (yt-test-step ytdlp 1 :out "")
+    (yt-test-step export 1 :out (yt-test-export-summary) :cookies (yt-test-cookies))
+    (yt-test-step ytdlp 2 :out "")
+    (pcase-let ((`(error ,err) (yt-test-auth-run (yt-ytdlp-feed-args 10)
+                                                 :parse 'ndjson :source 'feed)))
+      (should (eq (plist-get err :class) 'empty))
+      (should (string-match-p "\\`YouTube returned no videos with freshly exported cookies"
+                              (plist-get err :message))))
+    (should-not (memq (yt-auth-state) '(expired bot-check)))
+    (should-not (yt-auth--backing-off))
+    (should (= (yt-test-calls ytdlp) 2))
+    (should (= (yt-test-calls export) 1))))
+
 (ert-deftest yt-auth-run-concurrent-expiry-shares-one-export ()
   "Runs that find the session expired together trigger one export."
   (yt-test-with-scenario (ytdlp export)
