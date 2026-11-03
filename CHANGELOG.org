@@ -1,6 +1,9 @@
 #+title: yt changelog
 
 * Unreleased
+- =YT_LIVE=1 nix run .#smoke= checks yt against the real YouTube with the
+  sandbox's sign-in (yt-dlp version, session, feed and the fields yt
+  reads, resolving, SponsorBlock), printing counts only.
 - The sandbox keeps yt's state, cookies included, in
   =$XDG_STATE_HOME/yt-sandbox= (and its cache in =$XDG_CACHE_HOME=), not in
   =.sandbox/= inside the checkout, where =nix build path:.= or an archive

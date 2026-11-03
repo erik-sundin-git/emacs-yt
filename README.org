@@ -319,9 +319,15 @@ make test SELECTOR='"yt-feed-.*"'   # run a subset of the tests
 nix run .#test         # same as `make test`, without entering the shell
 nix run .#test -- lint # any make target
 nix flake check        # every check, plus the tests with compiled code
+YT_LIVE=1 nix run .#smoke  # a few checks against the real YouTube
 #+end_src
 
 =make= refuses to run unless =YT_EMACS= points at the flake's Emacs.
+=nix run .#smoke= is the only thing that talks to YouTube: with the
+sandbox's sign-in, it checks the yt-dlp version, the session, five feed
+entries and the fields yt reads from them, resolving one stream and
+SponsorBlock, printing counts only.  It changes nothing in the account and
+refuses to run without =YT_LIVE=1= or under CI.
 
 ** Sandbox Emacs
 #+begin_src sh

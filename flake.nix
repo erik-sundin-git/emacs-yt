@@ -218,6 +218,31 @@
             type = "app";
             program = "${sandbox}/bin/yt-sandbox";
           };
+          # Checks against the real YouTube with the sandbox's sign-in;
+          # counts only.  See test/yt-live.el.
+          smoke = {
+            type = "app";
+            program = "${pkgs.writeShellApplication {
+              name = "yt-smoke";
+              runtimeInputs = [
+                pkgs.git
+                p.emacs-test
+                pkgs.yt-dlp
+                pkgs.curl
+              ];
+              text = ''
+                ${findRepo}
+                : "''${YT_LIVE:?set YT_LIVE=1 to run checks against the real YouTube}"
+                : "''${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR must be set}"
+                export XDG_STATE_HOME="''${XDG_STATE_HOME:-$HOME/.local/state}/yt-sandbox"
+                export XDG_CACHE_HOME="''${XDG_CACHE_HOME:-$HOME/.cache}/yt-sandbox"
+                export YT_SANDBOX_RUNTIME_DIR="$XDG_RUNTIME_DIR/yt-sandbox"
+                exec emacs -Q --batch -L "$repo" \
+                  --eval '(setq yt-runtime-directory (getenv "YT_SANDBOX_RUNTIME_DIR"))' \
+                  -l "$repo/test/yt-live.el"
+              '';
+            }}/bin/yt-smoke";
+          };
         }
       );
 
