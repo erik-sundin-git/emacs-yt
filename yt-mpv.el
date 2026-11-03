@@ -99,7 +99,14 @@ LAST-SKIP is the latest of them."
   "Lines to send to mpv once connected, in order.")
 
 (defvar yt-mpv--reconnects 0
-  "Number of reconnects to the current mpv.")
+  "Number of reconnects to the current mpv in a row.
+It starts again from 0 once a connection lasted a while.")
+
+(defvar yt-mpv--connected-at nil
+  "When the current connection to mpv was made, or nil.")
+
+(defvar yt-mpv--connecting nil
+  "Non-nil while yt tries to connect to mpv.")
 
 (defvar yt-mpv--properties nil
   "Plist of the observed mpv properties, such as :time-pos.")
@@ -123,6 +130,8 @@ LAST-SKIP is the latest of them."
         yt-mpv--callbacks (make-hash-table)
         yt-mpv--pending nil
         yt-mpv--reconnects 0
+        yt-mpv--connected-at nil
+        yt-mpv--connecting nil
         yt-mpv--properties nil
         yt-mpv--entries (make-hash-table)
         yt-mpv--current nil))
@@ -176,20 +185,30 @@ LAST-SKIP is the latest of them."
     (yt-mpv--connect socket instance)))
 
 (defun yt-mpv--ensure ()
-  "Start mpv unless it is running."
+  "Start mpv unless it is running and yt is connected to it.
+An mpv yt lost the connection to is quit first, so that two never
+play at once."
+  (when (and (yt-mpv--process-alive-p)
+             (not (process-live-p yt-mpv--connection))
+             (not yt-mpv--connecting))
+    (when yt-mpv--current
+      (yt-mpv--finalize yt-mpv--current "quit"))
+    (delete-process yt-mpv--process))
   (unless (yt-mpv--process-alive-p)
     (yt-mpv--start)))
 
 ;;;; Connection
 
-(defun yt-mpv--connect (socket &optional instance attempts)
+(defun yt-mpv--connect (socket &optional instance attempts reconnect)
   "Connect to mpv's SOCKET, trying ATTEMPTS times.
 INSTANCE defaults to the current instance, and ATTEMPTS to
 `yt-mpv-connect-attempts'.  Each further attempt runs from a timer,
-so this never blocks."
+so this never blocks.  RECONNECT non-nil means mpv was connected
+before."
   (let ((instance (or instance yt-mpv--instance))
         (attempts (or attempts yt-mpv-connect-attempts)))
     (when (yt-mpv--current-p instance)
+      (setq yt-mpv--connecting t)
       (condition-case nil
           (progn
             (setq yt-mpv--connection
@@ -200,14 +219,17 @@ so this never blocks."
                              (yt-mpv--filter instance process string))
                    :sentinel (lambda (process event)
                                (yt-mpv--connection-sentinel instance process event))))
-            (setq yt-mpv--partial "")
+            (setq yt-mpv--partial ""
+                  yt-mpv--connecting nil
+                  yt-mpv--connected-at (yt--now))
             (yt-mpv--on-connect))
         (file-error
          (if (and (> attempts 1)
                   (or (null yt-mpv--process) (yt-mpv--process-alive-p)))
              (run-at-time yt-mpv-connect-interval nil
-                          #'yt-mpv--connect socket instance (1- attempts))
-           (yt-mpv--connect-failed)))))))
+                          #'yt-mpv--connect socket instance (1- attempts) reconnect)
+           (setq yt-mpv--connecting nil)
+           (yt-mpv--connect-failed reconnect)))))))
 
 (defun yt-mpv--send-line (line)
   "Send LINE to mpv, or keep it until yt is connected."
@@ -231,14 +253,22 @@ so this never blocks."
     (setq yt-mpv--callbacks (make-hash-table))
     (maphash (lambda (_id callback) (funcall callback nil message)) callbacks)))
 
-(defun yt-mpv--connect-failed ()
-  "Give up connecting: fail the waiting commands and stop mpv."
+(defun yt-mpv--connect-failed (&optional reconnect)
+  "Give up connecting: fail the waiting commands.
+A new mpv that never answered is stopped.  One that yt lost the
+connection to, when RECONNECT is non-nil, is left playing: the next
+video yt plays replaces it."
   (yt-mpv--fail-callbacks "could not connect to mpv")
   (setq yt-mpv--pending nil)
-  (when (yt-mpv--process-alive-p)
-    (delete-process yt-mpv--process))
-  (message "Could not connect to mpv; %s shows details"
-           (substitute-command-keys "\\[yt-player-show-log]")))
+  (cond
+   (reconnect
+    (yt-player-log "Lost the connection to mpv")
+    (message "Lost the connection to mpv: q in its window quits it, and the next video starts a new one"))
+   (t
+    (when (yt-mpv--process-alive-p)
+      (delete-process yt-mpv--process))
+    (message "Could not connect to mpv; %s shows details"
+             (substitute-command-keys "\\[yt-player-show-log]")))))
 
 (defun yt-mpv--connection-sentinel (instance process _event)
   "Handle the closing of the IPC connection PROCESS of mpv INSTANCE."
@@ -247,11 +277,18 @@ so this never blocks."
              (not (process-live-p process)))
     (setq yt-mpv--connection nil)
     (yt-mpv--fail-callbacks "disconnected from mpv")
-    (when (and (yt-mpv--process-alive-p)
-               (< yt-mpv--reconnects yt-mpv-reconnect-attempts))
-      (cl-incf yt-mpv--reconnects)
-      (run-at-time (* 0.2 (expt 2 (1- yt-mpv--reconnects))) nil
-                   #'yt-mpv--connect yt-mpv--socket instance 10))))
+    ;; Count only disconnects in quick succession.
+    (when (and yt-mpv--connected-at (>= (- (yt--now) yt-mpv--connected-at) 30))
+      (setq yt-mpv--reconnects 0))
+    (setq yt-mpv--connected-at nil)
+    (when (yt-mpv--process-alive-p)
+      (if (< yt-mpv--reconnects yt-mpv-reconnect-attempts)
+          (progn
+            (cl-incf yt-mpv--reconnects)
+            (setq yt-mpv--connecting t)
+            (run-at-time (* 0.2 (expt 2 (1- yt-mpv--reconnects))) nil
+                         #'yt-mpv--connect yt-mpv--socket instance 10 t))
+        (yt-mpv--connect-failed t)))))
 
 ;;;; Messages
 
@@ -511,9 +548,13 @@ URLs expire after some hours, which breaks queued entries."
       (delete-process yt-mpv--connection))
     (yt-mpv--delete-socket yt-mpv--socket)
     (let ((buffer (process-buffer process)))
-      (when (and (eq (process-status process) 'exit)
-                 (/= (process-exit-status process) 0))
-        (yt-player-log "mpv exited with status %d%s" (process-exit-status process)
+      (when (or (eq (process-status process) 'signal)
+                (/= (process-exit-status process) 0))
+        (yt-player-log "mpv %s %d%s"
+                       (if (eq (process-status process) 'signal)
+                           "was killed by signal"
+                         "exited with status")
+                       (process-exit-status process)
                        (if (buffer-live-p buffer)
                            (concat ":\n" (with-current-buffer buffer (buffer-string)))
                          "")))

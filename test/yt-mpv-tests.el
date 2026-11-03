@@ -129,6 +129,8 @@ directory and the fake mpv's directory."
             (yt-mpv--callbacks (make-hash-table))
             (yt-mpv--pending nil)
             (yt-mpv--reconnects 0)
+            (yt-mpv--connected-at nil)
+            (yt-mpv--connecting nil)
             (yt-mpv--properties nil)
             (yt-mpv--entries (make-hash-table))
             (yt-mpv--current nil)
@@ -312,6 +314,52 @@ A sleeping process stands in for mpv."
       (yt-mpv-test--wait-for server "observe_property" 14)
       (should (= yt-mpv--reconnects 1))
       (should (process-live-p yt-mpv--connection)))))
+
+(ert-deftest yt-mpv-reconnects-after-lasting-connections ()
+  "Disconnects far apart are reconnected however many there are."
+  (yt-mpv-test--with-mpv (_ytdlp _mpv)
+    (let* ((now 1000.0)
+           (yt--now-function (lambda () now))
+           (server (yt-mpv-test--connect)))
+      (yt-mpv-test--wait-for server "request_log_messages")
+      (dotimes (n 5)
+        (setq now (+ now 60))
+        (delete-process (yt-mpv-test--server-client server))
+        (yt-mpv-test--wait-for server "request_log_messages" (+ n 2)))
+      (should (= yt-mpv--reconnects 1))
+      (should (process-live-p yt-mpv--connection)))))
+
+(ert-deftest yt-mpv-lost-connection-keeps-mpv-until-replaced ()
+  "A failed reconnect leaves mpv playing; the next video replaces it."
+  (yt-mpv-test--with-mpv (_ytdlp _mpv)
+    (let ((server (yt-mpv-test--connect))
+          started)
+      (yt-mpv-test--wait-for server "request_log_messages")
+      (let ((mpv yt-mpv--process))
+        ;; mpv stops answering: the server is gone.
+        (delete-process (yt-mpv-test--server-process server))
+        (delete-process (yt-mpv-test--server-client server))
+        (yt-test-wait-until
+         (lambda () (with-current-buffer (get-buffer-create yt-player-log-buffer)
+                      (string-match-p "Lost the connection to mpv" (buffer-string))))
+         "reconnect gives up")
+        (should-not yt-mpv--connecting)
+        (should (process-live-p mpv))
+        (cl-letf (((symbol-function 'yt-mpv--start) (lambda () (setq started t))))
+          (yt-mpv--ensure))
+        (yt-test-wait-until (lambda () (not (process-live-p mpv))) "old mpv quit")
+        (should started)))))
+
+(ert-deftest yt-mpv-logs-a-crash ()
+  "An mpv killed by a signal is reported in the player log."
+  (yt-mpv-test--with-mpv (_ytdlp _mpv)
+    (yt-mpv-test--connect)
+    (let ((mpv yt-mpv--process))
+      (signal-process mpv 'SEGV)
+      (yt-test-wait-until (lambda () (not (process-live-p mpv))) "crash")
+      (yt-mpv--process-sentinel yt-mpv--instance mpv "segmentation fault")
+      (with-current-buffer yt-player-log-buffer
+        (should (string-match-p "mpv was killed by signal 11" (buffer-string)))))))
 
 ;;;; Following playlist entries
 

@@ -2,6 +2,11 @@
 
 * Unreleased
 ** After M7
+- mpv's control connection recovers better: yt reconnects however often
+  the connection drops, as long as it lasted a while each time; when it
+  cannot reconnect, mpv keeps playing (yt used to kill it) and the next
+  video yt plays replaces it; a crash of mpv is reported in the player
+  log.
 - Live streams no longer save a resume position, and a live stream that
   fails is reloaded at the live edge; past streams still resume.
 - A video whose stream expired is resolved again and put back in its
