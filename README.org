@@ -130,7 +130,7 @@ the info and queue buffers):
 | =g= / =G=     | refresh / cancel and refetch everything                  |
 | =/=           | filter: words, =@channel=, =!exclude= (=s= too, until 0.4) |
 | =c= / =C=     | show one channel / clear the filters                     |
-| =t w=, =t s=, =t u= | hide watched videos, Shorts, upcoming streams      |
+| =t w=, =t s=, =t u= | show or hide watched videos (hidden by default), Shorts, upcoming streams |
 | =t n=         | show only the videos new since your last visit (◆)      |
 | =x= / =t m=   | mute the channel at hand (its videos leave the feed) / show muted ones |
 | =T=           | in a channel: its past live streams / its videos again  |

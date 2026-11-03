@@ -1,6 +1,10 @@
 #+title: yt changelog
 
 * Unreleased
+- The feed hides watched videos by default (=yt-feed-hide-watched= is now
+  t); =t w= shows them.
+- Fixed: after a refresh, a feed opened at the top jumped to its last
+  row.  Point on the column names, above the rows, now stays there.
 - Org links: with =(with-eval-after-load 'ol (require 'yt-org))=,
   =org-store-link= in a yt buffer stores a plain YouTube link to the
   video at point, "Title — Channel", from where it is if it is playing.

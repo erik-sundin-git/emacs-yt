@@ -117,7 +117,29 @@ YTDLP is bound to the scenario directory of the fake yt-dlp."
     (should (= (yt-feed--find-row "a" '("a" "b" "c" "d") rows) 1))
     (should (= (yt-feed--find-row "b" '("a" "b" "c" "d") rows) 4))
     (should (= (yt-feed--find-row "e" '("a" "d" "e") rows) 4))
-    (should-not (yt-feed--find-row "x" nil (make-hash-table)))))
+    (should-not (yt-feed--find-row "x" nil (make-hash-table)))
+    ;; Above the rows and below them.
+    (should-not (yt-feed--find-row nil '("a" "d") rows))
+    (with-temp-buffer
+      (insert "names\nrow\n")
+      (should (= (yt-feed--find-row 'bottom '("a" "d") rows) (point-max))))))
+
+(ert-deftest yt-feed-refresh-keeps-point-at-top ()
+  "A feed opened at the top stays there when a refresh brings videos.
+Point starts on the column names, which are no row."
+  (yt-feed-test--with-feed ytdlp
+    (yt-test-step ytdlp 1 :out (yt-test-fixture-string "feed.ndjson"))
+    (let ((buffer (yt-feed-test--open)))
+      (switch-to-buffer buffer)
+      (goto-char (point-min))
+      (should-not (tabulated-list-get-id))
+      (yt-feed--redisplay)
+      (should (= (point) (point-min)))
+      (should (= (window-start) (point-min)))
+      ;; At the end, below the rows, it stays at the end.
+      (goto-char (point-max))
+      (yt-feed--redisplay)
+      (should (= (point) (point-max))))))
 
 ;;;; Rendering and refreshing
 

@@ -244,11 +244,12 @@ a session, and \\[universal-argument] \\[yt-feed-refresh], always fetch them all
   :group 'yt-feed
   :package-version '(yt . "0.1.0"))
 
-(defcustom yt-feed-hide-watched nil
-  "Non-nil means the feed hides videos you have watched."
+(defcustom yt-feed-hide-watched t
+  "Non-nil means the feed hides videos you have watched.
+\<yt-feed-mode-map>\[yt-feed-toggle-hide-watched] shows them for a while."
   :type 'boolean
   :group 'yt-feed
-  :package-version '(yt . "0.1.0"))
+  :package-version '(yt . "0.4.0"))
 
 (defcustom yt-feed-hide-shorts nil
   "Non-nil means the feed hides Shorts."

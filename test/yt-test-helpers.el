@@ -335,6 +335,8 @@ See `yt-test--end-scenario' for what is checked at the end."
             (yt-cache-file nil)
             (yt-cache--db nil)
             (yt-feed--fully-refreshed nil)
+            ;; The tests see every video unless they hide some.
+            (yt-feed-hide-watched nil)
             (yt-watched-changed-functions nil)
             (yt-auth-state-change-hook nil)
             (yt-curl-program yt-test-tripwire)

@@ -365,18 +365,32 @@ less than `yt-feed-visit-gap' seconds ago, which is the same visit."
         (forward-line 1)))
     (nreverse ids)))
 
+(defun yt-feed--row-at (pos)
+  "Return the id of the row at POS, for `yt-feed--find-row'.
+Above the rows, on the column names, return nil; below them, return
+`bottom'."
+  (or (tabulated-list-get-id pos)
+      (save-excursion
+        (goto-char pos)
+        (forward-line 0)
+        (and (not (bobp)) 'bottom))))
+
 (defun yt-feed--find-row (id old-ids rows)
   "Return the position of the row of ID, or of the nearest row.
 OLD-IDS are the ids printed before, in order, and ROWS maps the ids
 printed now to their positions.  If ID is gone, the nearest row is
 the first later row of OLD-IDS still printed, else the last earlier
-one.  Return nil if there is no row."
-  (or (and id (gethash id rows))
-      (let ((tail (member id old-ids)))
+one.  ID nil, above the rows, gives nil, and `bottom' the end of the
+buffer; see `yt-feed--row-at'.  Return nil if there is no row."
+  (cond
+   ((null id) nil)
+   ((eq id 'bottom) (point-max))
+   ((gethash id rows))
+   (t (let ((tail (member id old-ids)))
         (or (seq-some (lambda (other) (gethash other rows)) (cdr tail))
             (seq-some (lambda (other) (gethash other rows))
                       (reverse (seq-take old-ids (- (length old-ids)
-                                                    (length tail)))))))))
+                                                    (length tail))))))))))
 
 (defun yt-feed--insert-placeholder ()
   "Explain the empty feed at the end of the buffer."
@@ -441,10 +455,10 @@ filtered out is replaced by its nearest neighbour."
   (yt-feed--update-kept)
   (setq yt-feed--muted (and (eq yt-feed--source 'subscriptions) (yt-cache-muted-channels)))
   (let* ((old-ids (yt-feed--printed-ids))
-         (point-id (tabulated-list-get-id))
+         (point-id (yt-feed--row-at (point)))
          (windows (mapcar (lambda (window)
                             (with-selected-window window
-                              (list window (tabulated-list-get-id)
+                              (list window (yt-feed--row-at (point))
                                     (count-lines (window-start)
                                                  (line-beginning-position)))))
                           (get-buffer-window-list nil nil t))))
