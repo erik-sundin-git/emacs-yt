@@ -74,7 +74,9 @@ The cookie exporter, =yt-export-cookies=, then comes from
 
 When the session expires, yt exports the cookies again by itself, once.  If
 YouTube asks to confirm you are not a bot, open YouTube in the profile, then
-try again; yt waits 15 minutes before sending more requests.
+try again.  yt pauses its requests for 15 minutes, and the feed's header line
+says until when; =M-x yt-login= (or =yt-check-auth=) ends the pause as soon as
+YouTube accepts the session again.
 
 * Keys
 =C-c y= is the suggested binding for =yt-map=:

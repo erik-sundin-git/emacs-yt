@@ -2,6 +2,9 @@
 
 * Unreleased
 ** After M7
+- After a bot check or rate limit, a successful =yt-login= or
+  =yt-check-auth= ends the pause at once instead of after 15 minutes or an
+  hour, and the feed's header line says "Paused until HH:MM" meanwhile.
 - History: =C-c y h= lists the videos you played, newest first, with when
   and how far (=yt-history.el=); =d= removes, =D= clears, =/= filters.  The
   cache schema is now version 4, with a history table.  Both players call

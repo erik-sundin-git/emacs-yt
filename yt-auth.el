@@ -274,6 +274,16 @@ COPY is first copied next to it, then renamed over it."
   "Return (CLASS . UNTIL) while yt is backing off, else nil."
   (and yt-auth--backoff (< (yt--now) (cdr yt-auth--backoff)) yt-auth--backoff))
 
+(defun yt-auth-backoff-description ()
+  "Describe the pause after a bot check or rate limit, or return nil."
+  (when-let* ((backoff (yt-auth--backing-off)))
+    (format "Paused until %s (%s)"
+            (format-time-string "%H:%M" (cdr backoff))
+            (pcase (car backoff)
+              ('bot-check "YouTube asked for a bot check")
+              ('rate-limit "YouTube is limiting requests")
+              (class (symbol-name class))))))
+
 (defun yt-auth--start-backoff (class)
   "Stop sending requests for a while after a problem of CLASS."
   (let ((secs (pcase class
@@ -438,8 +448,15 @@ mode 0600 file in `yt-state-directory'."
   (yt-auth-run (yt-ytdlp-verify-args)
                :key '(yt-auth . verify) :source 'verify :ignore-backoff t
                :on-success (lambda (_value _info)
-                             (message "Signed in to YouTube with Chromium profile %s"
-                                      (yt-auth-profile-label (yt-auth-profile))))
+                             ;; The session works again: whatever made
+                             ;; YouTube ask for a bot check was fixed.
+                             (let ((paused (yt-auth--backing-off)))
+                               (setq yt-auth--backoff nil)
+                               (when paused
+                                 (run-hooks 'yt-auth-state-change-hook))
+                               (message "Signed in to YouTube with Chromium profile %s%s"
+                                        (yt-auth-profile-label (yt-auth-profile))
+                                        (if paused "; requests are no longer paused" ""))))
                :on-error (lambda (err) (message "%s" (plist-get err :message)))))
 
 ;;;###autoload

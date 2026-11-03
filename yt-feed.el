@@ -538,6 +538,8 @@ Stop the timer when no feed buffer is left."
                             'face 'warning 'mouse-face 'header-line-highlight
                             'keymap yt-feed--sign-in-map
                             'help-echo "mouse-1: sign in to YouTube"))
+           (when-let* ((paused (yt-auth-backoff-description)))
+             (propertize paused 'face 'warning))
            (pcase yt-feed--source
              (`(playlist ,id . ,_)
               (if (yt-cache-playlist-saved-p id)

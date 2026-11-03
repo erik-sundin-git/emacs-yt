@@ -276,6 +276,32 @@ CALLBACK, if non-nil, is also passed to `yt-auth-export'."
     (let ((yt--now-function (lambda () (+ (float-time) yt-auth-bot-check-backoff 1))))
       (should-not (yt-auth--backing-off)))))
 
+(ert-deftest yt-auth-successful-check-lifts-backoff ()
+  "A successful sign-in check ends the pause; a refused run does not."
+  (yt-test-with-scenario (ytdlp _)
+    (yt-test-install-cookies)
+    (yt-test-step ytdlp 1 :exit 1 :err yt-auth-test--bot)
+    (yt-test-step ytdlp 2 :exit 1 :err yt-auth-test--bot)
+    (yt-test-step ytdlp 3 :out "{\"entries\": [{\"id\": \"x\"}]}")
+    (yt-test-step ytdlp 4 :out "{\"entries\": [{\"id\": \"x\"}]}")
+    (yt-test-auth-run (yt-ytdlp-verify-args) :source 'verify)
+    (should (string-match-p "\\`Paused until [0-9:]+ (YouTube asked for a bot check)\\'"
+                            (yt-auth-backoff-description)))
+    (with-temp-buffer
+      (yt-feed-mode)
+      (setq yt-feed--source 'subscriptions)
+      (should (string-match-p "Paused until" (yt-feed--header-line))))
+    ;; A check that fails again keeps the pause.
+    (yt-check-auth)
+    (yt-test-wait-until (lambda () (= (yt-test-calls ytdlp) 2)) "second check")
+    (yt-test-wait-until (lambda () (not (yt-process-busy-p '(yt-auth . verify)))) "check done")
+    (should (yt-auth--backing-off))
+    (yt-check-auth)
+    (yt-test-wait-until (lambda () (not (yt-auth--backing-off))) "pause lifted")
+    (should-not (yt-auth-backoff-description))
+    (should (eq 'ok (car (yt-test-auth-run (yt-ytdlp-verify-args) :source 'verify))))
+    (should (= (yt-test-calls ytdlp) 4))))
+
 (ert-deftest yt-auth-run-denied-extra-args-leave-no-copy ()
   "Refused extra arguments signal an error and leave no cookie copy."
   (yt-test-with-scenario (ytdlp _)
