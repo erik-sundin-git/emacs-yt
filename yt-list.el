@@ -44,6 +44,8 @@
 (require 'yt)
 (require 'yt-video)
 
+(declare-function yt-login "yt-auth" (&optional choose))
+
 ;;;; Faces
 
 (defface yt-feed-age '((t :inherit shadow))
