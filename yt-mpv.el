@@ -427,8 +427,13 @@ once per entry."
             (yt-cache-set-position video-id nil)
             (unless (and (eq yt-mark-watched-when 'start) (yt-video-watched video))
               (yt-mark-watched video)))
-           ((and pos (>= pos 30))
+           ;; A live stream has no position to come back to.
+           ((and pos (>= pos 30) (not (yt-mpv--entry-live-p entry)))
             (yt-cache-set-position video-id pos))))))))
+
+(defun yt-mpv--entry-live-p (entry)
+  "Return non-nil if ENTRY plays a stream that is live."
+  (plist-get (yt-mpv--entry-streams entry) :live))
 
 (defun yt-mpv--log-message (message)
   "Keep the mpv log MESSAGE, without stream URLs."
@@ -443,7 +448,7 @@ once per entry."
 It plays from where it failed, in its place in the playlist.  Stream
 URLs expire after some hours, which breaks queued entries."
   (let ((video (yt-mpv--entry-video entry))
-        (pos (yt-mpv--entry-pos entry))
+        (pos (and (not (yt-mpv--entry-live-p entry)) (yt-mpv--entry-pos entry)))
         (instance yt-mpv--instance))
     (message "Playing “%s” failed; resolving it again..." (yt-player--title video))
     (yt-player-resolve

@@ -113,5 +113,16 @@
     (should (string-match-p "yt-dlp-fake-name"
                             (yt-ytdlp-version-problem "2026.05.31" now)))))
 
+(ert-deftest yt-ytdlp-parse-streams-live ()
+  "Only a stream that is live now counts as live."
+  (let ((info (yt-process-parse-json (yt-test-fixture-string "resolve-combined.json"))))
+    (should-not (plist-get (yt-ytdlp-parse-streams info) :live))
+    (should (plist-get (yt-ytdlp-parse-streams (plist-put (copy-sequence info)
+                                                          :live_status "is_live"))
+                       :live))
+    (should-not (plist-get (yt-ytdlp-parse-streams (plist-put (copy-sequence info)
+                                                              :live_status "was_live"))
+                           :live))))
+
 (provide 'yt-ytdlp-tests)
 ;;; yt-ytdlp-tests.el ends here

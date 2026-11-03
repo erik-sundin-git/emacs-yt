@@ -402,6 +402,28 @@ A sleeping process stands in for mpv."
       (with-current-buffer yt-player-log-buffer
         (should (string-match-p "loading failed" (buffer-string)))))))
 
+(ert-deftest yt-mpv-live-streams-keep-no-position ()
+  "A live stream saves no position, and its retry starts at the live edge."
+  (yt-mpv-test--with-mpv (ytdlp _mpv)
+    (let* ((server (yt-mpv-test--connect))
+           (video (yt-mpv-test--video "videolive01" :live-status 'is_live))
+           (streams (plist-put (copy-sequence (yt-mpv-test--streams)) :live t)))
+      (yt-cache-set-position "videolive01" 300.0)
+      (should-not (yt-player--resume-position video))
+      (yt-mpv--load video streams "replace")
+      (yt-test-wait-until (lambda () (yt-mpv-test--entry-ids video)) "loadfile reply")
+      (let ((id (car (yt-mpv-test--entry-ids video))))
+        (yt-mpv-test--play-through server id :time-pos 500.0)
+        (yt-test-wait-until (lambda () (equal (plist-get yt-mpv--properties :time-pos) 500.0))
+                            "time-pos")
+        (yt-cache-set-position "videolive01" nil)
+        (yt-test-step ytdlp 1 :out (yt-test-fixture-string "resolve-combined.json"))
+        (yt-mpv-test--emit server :event "end-file" :playlist_entry_id id
+                           :reason "error" :file_error "manifest expired"))
+      (let ((retry (plist-get (yt-mpv-test--wait-for server "loadfile" 2) :command)))
+        (should-not (plist-get (plist-get retry :options) :start)))
+      (should-not (yt-video-position (yt-cache-get "videolive01"))))))
+
 (ert-deftest yt-mpv-entries-are-tracked-by-id ()
   "The same video queued twice is followed as two entries."
   (yt-mpv-test--with-mpv (_ytdlp _mpv)

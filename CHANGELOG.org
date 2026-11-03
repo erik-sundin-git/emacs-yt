@@ -2,6 +2,8 @@
 
 * Unreleased
 ** After M7
+- Live streams no longer save a resume position, and a live stream that
+  fails is reloaded at the live edge; past streams still resume.
 - A video whose stream expired is resolved again and put back in its
   place in mpv's playlist; the retry used to empty the playlist.
 - Refreshes and downloads always finish: an error while showing a refresh

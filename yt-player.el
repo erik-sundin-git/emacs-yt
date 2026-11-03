@@ -345,8 +345,10 @@ playlist in the order they were queued."
 (defun yt-player--resume-position (video)
   "Return the position to resume VIDEO at, or nil to play from the start.
 A position is used only if `yt-player-resume' is non-nil and it is
-at least 30 s in and short of `yt-player-watched-threshold'."
+at least 30 s in and short of `yt-player-watched-threshold', and never
+for a stream that is live."
   (let* ((cached (and yt-player-resume (yt-video-id video)
+                      (not (eq (yt-video-live-status video) 'is_live))
                       (yt-cache-get (yt-video-id video))))
          (position (and cached (yt-video-position cached)))
          (duration (or (yt-video-duration video) (and cached (yt-video-duration cached)))))
