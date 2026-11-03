@@ -25,6 +25,7 @@
     (corrupt-cookies . "ERROR: failed to load cookies")
     (network . "ERROR: [youtube:tab] ytsubs: Unable to download webpage: <urlopen error [Errno -3] Temporary failure in name resolution> (caused by TransportError)")
     (network . "ERROR: [youtube] fakevideo01: Unable to download API page: The read operation timed out")
+    (no-tab . "ERROR: [youtube:tab] UCfakechannel00000000002: This channel does not have a streams tab")
     (extractor . "ERROR: [youtube:tab] ytsubs: Unable to recognize tab page")
     (extractor . "WARNING: [youtube] fakevideo01: Signature solving failed: Some formats may be missing.")
     (format . "ERROR: [youtube] fakevideo01: Requested format is not available. Use --list-formats for a list of available formats"))

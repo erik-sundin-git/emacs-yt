@@ -90,13 +90,13 @@ The output is one JSON object per line."
   "Return arguments that list the subscribed channels as one JSON document."
   (list "--flat-playlist" "-J" "--" "https://www.youtube.com/feed/channels"))
 
-(defun yt-ytdlp-channel-args (url limit)
+(defun yt-ytdlp-channel-args (url limit &optional tab)
   "Return arguments that stream the first LIMIT uploads of the channel URL.
-URL is the channel's page; its videos tab is fetched.  The output is
-one JSON object per line."
+URL is the channel's page; its videos tab is fetched, or TAB, such
+as \"streams\", if given.  The output is one JSON object per line."
   (list "--flat-playlist" "--lazy-playlist" "-I" (format "1:%d" limit)
         "--extractor-args" "youtubetab:approximate_date"
-        "-j" "--" (concat (string-remove-suffix "/" url) "/videos")))
+        "-j" "--" (concat (string-remove-suffix "/" url) "/" (or tab "videos"))))
 
 (defun yt-ytdlp-channel-playlists-args (url)
   "Return arguments that list the playlists of the channel URL as one JSON."
@@ -194,6 +194,7 @@ or nil.  Return nil if INFO names no stream."
     (bad-profile . "could not find [a-z]+ cookies database")
     (corrupt-cookies . "failed to load cookies\\|does not look like a Netscape format\\|must be Netscape formatted")
     (network . "urlopen error\\|name resolution\\|timed out\\|network is unreachable\\|connection refused")
+    (no-tab . "does not have an? [a-z]+ tab")
     (extractor . "unable to extract\\|unable to recognize tab page\\|signature solving failed\\|n challenge solving failed")
     (format . "requested format is not available"))
   "Ordered alist of (CLASS . REGEXP) for yt-dlp's standard error.
@@ -256,6 +257,7 @@ STDERR is used for classes yt does not know."
     ('extractor (concat "yt-dlp could not read YouTube's response; "
                         (yt-ytdlp-update-hint)))
     ('format "The requested video format is not available")
+    ('no-tab "This channel does not have that tab")
     ('timeout "yt-dlp took too long and was stopped")
     ('cancelled "Cancelled")
     (_ (yt-ytdlp--last-error-line stderr))))

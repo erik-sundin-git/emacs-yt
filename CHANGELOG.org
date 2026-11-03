@@ -1,6 +1,9 @@
 #+title: yt changelog
 
 * Unreleased
+- =T= in a channel's buffer switches between its videos and its past
+  live streams, each cached apart.  A channel that never streamed shows
+  an empty list.
 - =x= mutes the channel at hand (in the feed or the channels list): its
   videos leave the subscription feed, =t m= shows them again, and =x=
   unmutes.  Its own uploads still show everything.  Muted channels are

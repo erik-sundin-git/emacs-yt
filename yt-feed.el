@@ -72,6 +72,11 @@ It is `subscriptions' for the subscription feed, (channel ID URL
 NAME) for a channel's uploads, (playlist ID URL TITLE) for a
 playlist, and (search QUERY) for search results.")
 
+(defvar-local yt-feed--tab nil
+  "The tab of a channel this buffer shows.
+nil for its videos, `streams' for its past live streams; see
+\[yt-feed-toggle-streams].")
+
 (defvar yt-playlist-limit 300
   "Number of videos fetched from a playlist.")
 
@@ -126,7 +131,7 @@ Elsewhere nil: a channel's own uploads are never hidden.")
 The order of search results is not kept."
   (pcase yt-feed--source
     ('subscriptions "subscriptions")
-    (`(channel ,id . ,_) (concat "channel:" id))
+    (`(channel ,id . ,_) (concat "channel:" id (and yt-feed--tab ":streams")))
     (`(playlist ,id . ,_) (concat "playlist:" id))))
 
 (defun yt-feed--fetch-spec ()
@@ -141,16 +146,21 @@ the cached feed instead of being merged into it."
      (list :args (yt-ytdlp-feed-args yt-feed-limit) :auth-source 'feed
            :approx t :stop-early t))
     (`(channel ,_id ,url . ,_)
-     (list :args (yt-ytdlp-channel-args url yt-feed-limit) :approx t :stop-early t))
+     (list :args (yt-ytdlp-channel-args url yt-feed-limit (and yt-feed--tab "streams"))
+           :approx t :stop-early t))
     (`(playlist ,_id ,url . ,_)
      (list :args (yt-ytdlp-playlist-args url yt-playlist-limit) :approx t :replace t))
     (`(search ,query)
      (let ((args (yt-ytdlp-search-args query yt-search-limit)))
        (list :args args :redact (last args))))))
 
+(defun yt-feed--feed-key ()
+  "Return what tells this buffer's feed apart: its source and tab."
+  (if yt-feed--tab (append yt-feed--source (list yt-feed--tab)) yt-feed--source))
+
 (defun yt-feed--process-key ()
   "Return the process key of this buffer's refresh."
-  (cons 'yt-feed yt-feed--source))
+  (cons 'yt-feed (yt-feed--feed-key)))
 
 (defun yt-feed--buffers ()
   "Return the live feed buffers."
@@ -380,6 +390,8 @@ one.  Return nil if there is no row."
                     ((and yt-feed--videos (yt-feed--hidden-message)))
                     ((eq (car-safe yt-feed--source) 'search)
                      (format "No results for “%s”." (cadr yt-feed--source)))
+                    ((and yt-feed--tab yt-feed--refreshed-at)
+                     "This channel has no past live streams.")
                     ((and (eq yt-feed--source 'subscriptions)
                           (not (file-exists-p (yt-auth-cookie-file))))
                      (substitute-command-keys
@@ -559,6 +571,9 @@ redisplay does not query the cache; `yt-feed--update-kept' sets it.")
                             'help-echo "mouse-1: sign in to YouTube"))
            (when-let* ((paused (yt-auth-backoff-description)))
              (propertize paused 'face 'warning))
+           (when yt-feed--tab
+             (substitute-command-keys
+              "past live streams (\\<yt-feed-mode-map>\\[yt-feed-toggle-streams] shows the videos)"))
            (pcase yt-feed--kept
              ('saved (propertize "saved playlist" 'face 'success))
              ('not-saved (substitute-command-keys
@@ -647,7 +662,7 @@ INFO is from `yt-auth-run'; FULL is non-nil for a full refresh."
           (yt-feed--set-videos videos)
           (setq new nil))
         (when (and full (not (plist-get info :stopped)))
-          (cl-pushnew yt-feed--source yt-feed--fully-refreshed :test #'equal))
+          (cl-pushnew (yt-feed--feed-key) yt-feed--fully-refreshed :test #'equal))
         ;; YouTube answered, so thumbnails that failed offline may work.
         (when info
           (yt-thumbs-forget-failures))
@@ -694,14 +709,17 @@ INFO is from `yt-auth-run'; FULL is non-nil for a full refresh."
                             (not (eq (plist-get err :type) 'cancelled)))
                    (yt-feed--finish
                     buffer run
-                    (lambda ()
+                    (if (eq (plist-get err :class) 'no-tab)
+                        ;; A channel that never streamed has no streams tab.
+                        (lambda () (yt-feed--fetched buffer run nil nil full))
+                      (lambda ()
                       ;; Keep what arrived before a timeout or a network
                       ;; error; a playlist is only replaced when whole.
                       (when (and videos (memq (plist-get err :type) '(timeout exit))
                                  (not (plist-get spec :replace)))
-                        (yt-feed--fetched buffer run (nreverse videos) nil nil))
-                      (with-current-buffer buffer
-                        (yt-feed--fail (yt-feed--failure-message err))))))))))
+                          (yt-feed--fetched buffer run (nreverse videos) nil nil))
+                        (with-current-buffer buffer
+                          (yt-feed--fail (yt-feed--failure-message err)))))))))))
 
 (defun yt-feed--finish (buffer run fn)
   "Call FN to end the refresh RUN of BUFFER.
@@ -745,7 +763,7 @@ FULL, cancel a running refresh and fetch `yt-feed-limit' videos."
    ((not (file-exists-p (yt-auth-cookie-file)))
     (yt-feed--sign-in))
    (t
-    (yt-feed--fetch (or full (not (member yt-feed--source yt-feed--fully-refreshed))))
+    (yt-feed--fetch (or full (not (member (yt-feed--feed-key) yt-feed--fully-refreshed))))
     (yt-feed--redisplay))))
 
 (defun yt-feed-refresh-all ()
@@ -936,6 +954,7 @@ the channel at hand."
   "t" (cons "toggle" yt-feed-toggle-map)
   "l" #'yt-channels
   "z" #'yt-feed-shuffle
+  "T" #'yt-feed-toggle-streams
   "A" #'yt-feed-play-all-from-here
   "W" #'yt-feed-mark-all-watched
   "x" #'yt-feed-toggle-mute
@@ -1112,6 +1131,25 @@ this buffer shows, or the channel at point in the channels list."
 (defun yt-feed-playlist (id url title)
   "Show the videos of the playlist TITLE with ID and URL, in its order."
   (yt-feed--show (list 'playlist id url title) (format "*yt: Playlist: %s*" title)))
+
+(defun yt-feed-toggle-streams ()
+  "Switch this channel's buffer between its videos and its past live streams.
+Each shows from the cache at first, like the subscription feed."
+  (interactive nil yt-feed-mode)
+  (unless (eq (car-safe yt-feed--source) 'channel)
+    (user-error "Only a channel's buffer has past live streams"))
+  (yt-feed--cancel)
+  (setq yt-feed--tab (unless yt-feed--tab 'streams)
+        yt-feed--refreshing nil
+        yt-feed--status nil
+        yt-feed--error nil)
+  (yt-feed--load-cache)
+  (yt-feed--redisplay)
+  (force-mode-line-update)
+  (unless (yt-feed--fresh-p)
+    (yt-feed-refresh))
+  (message "Showing the %s of %s" (if yt-feed--tab "past live streams" "videos")
+           (yt-feed--source-name)))
 
 (defun yt-feed--playlist-id ()
   "Return the id of this buffer's playlist, or nil."

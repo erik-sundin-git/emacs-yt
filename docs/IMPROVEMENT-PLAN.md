@@ -31,6 +31,10 @@ Effort: S (under half a day), M (a day or two), L (more).
   migrations and on request, min_reader for rollbacks, a damaged cache
   set aside, unreadable rows skipped, secure_delete with a WAL
   checkpoint after forgetting, counts in one query.  Next: M14.
+- **M14: done** (2026-11-03), 8d2ca75 and its successor: mute channels on `x`
+  (schema 5), and `T` for a channel's past streams.  Watch Later, Liked
+  and your own playlists deferred; the Shorts tab cut (see below).
+  Shorts are hidden in the feed by the user's config.  Next: M13.
 
 ## Guiding decisions
 

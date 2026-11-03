@@ -183,6 +183,68 @@ YTDLP is bound to the fake yt-dlp's scenario directory."
       (goto-char (gethash "fakeshort04" (yt-feed--row-positions)))
       (should-error (call-interactively #'yt-feed-open-channel) :type 'user-error))))
 
+;;;; A channel's past live streams
+
+(defconst yt-browse-test--stream
+  (concat "{\"_type\": \"url\", \"ie_key\": \"Youtube\", \"id\": \"fakestream1\", "
+          "\"url\": \"https://www.youtube.com/watch?v=fakestream1\", \"title\": \"A past stream\", "
+          "\"duration\": 7200, \"timestamp\": 1793200000, \"live_status\": \"was_live\", "
+          "\"playlist_channel\": \"Fake Channel Two\", "
+          "\"playlist_channel_id\": \"UCfakechannel00000000002\"}\n")
+  "A line of a channel's streams tab.")
+
+(defun yt-browse-test--channel ()
+  "Show the uploads of Fake Channel Two and return the buffer once fetched."
+  (yt-browse-test--wait-feed
+   (yt-feed-channel "UCfakechannel00000000002"
+                    "https://www.youtube.com/channel/UCfakechannel00000000002"
+                    "Fake Channel Two")))
+
+(ert-deftest yt-browse-channel-streams ()
+  "\\`T' switches a channel between its videos and its past streams."
+  (yt-browse-test--with ytdlp
+    (yt-test-step ytdlp 1 :out (yt-test-fixture-string "uploads.ndjson"))
+    (yt-test-step ytdlp 2 :out yt-browse-test--stream)
+    (with-current-buffer (yt-browse-test--channel)
+      (should (eq (keymap-lookup yt-feed-mode-map "T") #'yt-feed-toggle-streams))
+      (yt-feed-toggle-streams)
+      (yt-browse-test--wait-feed (current-buffer))
+      (should (equal (yt-feed-test-ids) '("fakestream1")))
+      (should (equal (car (last (yt-test-argv ytdlp 2)))
+                     "https://www.youtube.com/channel/UCfakechannel00000000002/streams"))
+      (should (string-match-p "past live streams" (yt-feed--header-line)))
+      ;; Each tab has its own place in the cache.
+      (should (equal (yt-test-ids (yt-cache-feed "channel:UCfakechannel00000000002:streams"))
+                     '("fakestream1")))
+      (should (equal (yt-test-ids (yt-cache-feed "channel:UCfakechannel00000000002"))
+                     '("fakeupload1" "fakeupload2")))
+      ;; Back to the videos, fresh in the cache: nothing is fetched.
+      (yt-feed-toggle-streams)
+      (should-not yt-feed--refreshing)
+      (should (equal (yt-feed-test-ids) '("fakeupload1" "fakeupload2")))
+      (should (= (yt-test-calls ytdlp) 2))
+      (should-not (string-match-p "past live streams" (yt-feed--header-line))))))
+
+(ert-deftest yt-browse-channel-without-streams ()
+  "A channel without a streams tab has no past streams, and no error."
+  (yt-browse-test--with ytdlp
+    (yt-test-step ytdlp 1 :out (yt-test-fixture-string "uploads.ndjson"))
+    (yt-test-step ytdlp 2 :exit 1
+                  :err "ERROR: [youtube:tab] UCfakechannel00000000002: This channel does not have a streams tab\n")
+    (with-current-buffer (yt-browse-test--channel)
+      (yt-feed-toggle-streams)
+      (yt-browse-test--wait-feed (current-buffer))
+      (should-not yt-feed--error)
+      (should-not (yt-feed-test-ids))
+      (should (string-match-p "This channel has no past live streams" (buffer-string))))))
+
+(ert-deftest yt-browse-streams-only-in-channels ()
+  "\\`T' outside a channel's buffer says why it does nothing."
+  (yt-browse-test--with ytdlp
+    (yt-test-step ytdlp 1 :out (yt-test-fixture-string "feed.ndjson"))
+    (with-current-buffer (yt-browse-test--wait-feed (yt))
+      (should-error (yt-feed-toggle-streams) :type 'user-error))))
+
 ;;;; Search
 
 (ert-deftest yt-browse-search ()
