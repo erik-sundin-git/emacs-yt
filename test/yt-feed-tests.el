@@ -219,6 +219,39 @@ YTDLP is bound to the scenario directory of the fake yt-dlp."
                        (cons "newvideo01" yt-feed-test--fixture-ids)))
         (should-not yt-feed--error)))))
 
+(ert-deftest yt-feed-refresh-ends-when-showing-fails ()
+  "An error while showing a refresh ends it, so that \\[yt-feed-refresh] works again."
+  (yt-feed-test--with-feed ytdlp
+    (yt-test-step ytdlp 1 :out (yt-test-fixture-string "feed.ndjson"))
+    (yt-test-step ytdlp 2 :out (yt-test-fixture-string "feed.ndjson"))
+    (with-current-buffer
+        (cl-letf (((symbol-function 'yt-cache-put-feed)
+                   (lambda (&rest _) (error "Database is locked"))))
+          (yt-feed-test--open))
+      (should-not yt-feed--refreshing)
+      (should (string-match-p "Refreshing failed: Database is locked" yt-feed--error))
+      (yt-feed-refresh)
+      (yt-feed-test--wait (current-buffer))
+      (should (= (yt-test-calls ytdlp) 2))
+      (should-not yt-feed--error)
+      (should (equal (yt-feed-test--ids) yt-feed-test--fixture-ids)))))
+
+(ert-deftest yt-feed-refresh-keeps-partial-results ()
+  "Videos received before a refresh timed out are kept."
+  (yt-feed-test--with-feed ytdlp
+    (yt-test-step ytdlp 1 :out (yt-test-fixture-string "feed.ndjson"))
+    (with-current-buffer (yt-feed-test--open)
+      (yt-test-step ytdlp 2 :mode "stream-hang"
+                    :out (concat (yt-feed-test--entry "newvideo01")
+                                 (yt-feed-test--entry "newvideo02")))
+      (let ((yt-process-timeout 1))
+        (yt-feed-refresh)
+        (yt-feed-test--wait (current-buffer)))
+      (should (equal (seq-take (yt-feed-test--ids) 2) '("newvideo01" "newvideo02")))
+      (should (equal (mapcar #'yt-video-id (seq-take (yt-cache-feed "subscriptions") 2))
+                     '("newvideo01" "newvideo02")))
+      (should yt-feed--error))))
+
 (ert-deftest yt-feed-full-refresh-cancels-running-one ()
   "\\[yt-feed-refresh-all] cancels a running refresh and fetches everything."
   (yt-feed-test--with-feed ytdlp

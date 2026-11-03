@@ -187,7 +187,8 @@ Google session, and its cookies would be stored in a file; use it anyway? ")))
         (cl-incf yt-auth--generation)
       (yt-auth--set-state (plist-get result :class)))
     (dolist (waiter waiters)
-      (funcall waiter ok result))))
+      (with-demoted-errors "yt: %S"
+        (funcall waiter ok result)))))
 
 (defun yt-auth-export (callback)
   "Export the cookies of the chosen Chromium profile to the master file.
@@ -198,20 +199,30 @@ exporter's summary, a plist; on failure it is a plist with :class and
   ;; have exited already, with its callback still to come from a timer.
   (push callback yt-auth--export-waiters)
   (unless (cdr yt-auth--export-waiters)
-    (let ((profile (yt-auth-profile)))
-      (if (not profile)
-          (yt-process-deliver
-           #'yt-auth--export-done nil
-           (list :class 'no-cookies
-                 :message "No Chromium profile chosen: run M-x yt-login"))
-        (yt-process-run
-         yt-export-cookies-program
-         (list "--profile" profile "--output" (yt-auth-cookie-file))
-         :key '(yt-auth . export) :parse 'json
-         :on-success (lambda (summary _info)
-                       (yt-auth--export-done t summary))
-         :on-error (lambda (err)
-                     (yt-auth--export-done nil (yt-auth--export-failure err))))))))
+    (condition-case err
+        (yt-auth--start-export)
+      ;; Such as a state directory yt refuses to use: end the export
+      ;; now, or later exports would wait for it forever.
+      (error (yt-process-deliver #'yt-auth--export-done nil
+                                 (list :class 'no-cookies
+                                       :message (error-message-string err)))))))
+
+(defun yt-auth--start-export ()
+  "Start the cookie exporter for `yt-auth-export'."
+  (let ((profile (yt-auth-profile)))
+    (if (not profile)
+        (yt-process-deliver
+         #'yt-auth--export-done nil
+         (list :class 'no-cookies
+               :message "No Chromium profile chosen: run M-x yt-login"))
+      (yt-process-run
+       yt-export-cookies-program
+       (list "--profile" profile "--output" (yt-auth-cookie-file))
+       :key '(yt-auth . export) :parse 'json
+       :on-success (lambda (summary _info)
+                     (yt-auth--export-done t summary))
+       :on-error (lambda (err)
+                   (yt-auth--export-done nil (yt-auth--export-failure err)))))))
 
 ;;;; Per-run cookie copies
 
@@ -365,7 +376,12 @@ RETRIED is for internal use."
                      (funcall fail (append (list :type 'exit :class class :empty empty)
                                            info))
                    (unwind-protect
-                       (yt-auth--write-back copy generation)
+                       ;; Saving rotated cookies is a bonus: a failure
+                       ;; must not turn a good run into neither result.
+                       (condition-case err
+                           (yt-auth--write-back copy generation)
+                         (error (yt-process-log "Keeping the old cookies: %s"
+                                                (error-message-string err))))
                      (ignore-errors (delete-file copy)))
                    (when source
                      (yt-auth--set-state 'ok))

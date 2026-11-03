@@ -92,14 +92,16 @@ are scaled up.  A change shows in feed buffers after \\`t i' twice."
          (part (concat file ".part"))
          (finish (lambda (ok &optional cancelled)
                    (remhash id yt-thumbs--pending)
-                   (if ok
-                       (progn (rename-file part file t)
-                              (run-hook-with-args 'yt-thumbs-changed-functions id))
-                     (ignore-errors (delete-file part))
-                     ;; A cancelled download may be requested again.
-                     (unless cancelled
-                       (puthash id t yt-thumbs--failed)))
-                   (funcall done))))
+                   ;; The queue slot is freed whatever happens here.
+                   (unwind-protect
+                       (if ok
+                           (progn (rename-file part file t)
+                                  (run-hook-with-args 'yt-thumbs-changed-functions id))
+                         (ignore-errors (delete-file part))
+                         ;; A cancelled download may be requested again.
+                         (unless cancelled
+                           (puthash id t yt-thumbs--failed)))
+                     (funcall done)))))
     (unless (yt-process-run
              yt-curl-program
              (list "--silent" "--fail" "--proto" "=https" "--max-time" "20"

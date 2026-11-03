@@ -101,6 +101,19 @@ directory and the fake curl's directory."
       (yt-test-wait-until (lambda () (zerop (hash-table-count yt-thumbs--pending)))
                           "cancelled"))))
 
+(ert-deftest yt-thumbs-errors-free-the-queue ()
+  "An error after a download still frees its place in the queue."
+  (yt-thumbs-test--with (_ytdlp curl)
+    (let ((ids '("thumbvid001" "thumbvid002" "thumbvid003" "thumbvid004" "thumbvid005"))
+          (seen 0))
+      (add-hook 'yt-thumbs-changed-functions
+                (lambda (_id) (cl-incf seen) (error "Broken redisplay")))
+      (dolist (id ids)
+        (with-demoted-errors "%S" (yt-thumbs-fetch (list id))))
+      (yt-test-wait-until (lambda () (= (length (yt-thumbs-test--calls curl)) 5))
+                          "all five downloads")
+      (yt-test-wait-until (lambda () (= seen 5)) "all five arrivals"))))
+
 (ert-deftest yt-thumbs-ignores-unsafe-ids ()
   "Ids that are not plain video ids are never used in file names or URLs."
   (yt-thumbs-test--with (_ytdlp curl)

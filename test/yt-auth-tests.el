@@ -256,6 +256,33 @@ CALLBACK, if non-nil, is also passed to `yt-auth-export'."
     (should (= (yt-test-calls ytdlp) 2))
     (should (= (yt-test-calls export) 1))))
 
+(ert-deftest yt-auth-run-survives-failed-write-back ()
+  "A run succeeds even when saving the rotated cookies fails."
+  (yt-test-with-scenario (ytdlp _)
+    (yt-test-install-cookies)
+    (yt-test-step ytdlp 1 :out "{\"entries\": [{\"id\": \"x\"}]}")
+    (cl-letf (((symbol-function 'yt-auth--write-back)
+               (lambda (&rest _) (error "Disk full"))))
+      (should (eq 'ok (car (yt-test-auth-run (yt-ytdlp-verify-args) :source 'verify)))))
+    (should-not (yt-test-cookie-copies))))
+
+(ert-deftest yt-auth-export-that-cannot-start-ends ()
+  "An export that signals while starting ends, and the next one runs."
+  (yt-test-with-scenario (_ export)
+    (yt-auth-test--use-profile)
+    (yt-test-step export 1 :out (yt-test-export-summary) :cookies (yt-test-cookies))
+    (let (results)
+      (cl-letf (((symbol-function 'yt-auth-cookie-file)
+                 (lambda () (user-error "Refusing to use the state directory"))))
+        (yt-auth-export (lambda (ok result) (push (list ok (plist-get result :message)) results)))
+        (yt-test-wait-until (lambda () results) "failed export"))
+      (should (equal results '((nil "Refusing to use the state directory"))))
+      (should-not yt-auth--export-waiters)
+      (setq results nil)
+      (yt-auth-export (lambda (ok _) (push ok results)))
+      (yt-test-wait-until (lambda () results) "second export")
+      (should (equal results '(t))))))
+
 (ert-deftest yt-auth-run-concurrent-expiry-shares-one-export ()
   "Runs that find the session expired together trigger one export."
   (yt-test-with-scenario (ytdlp export)

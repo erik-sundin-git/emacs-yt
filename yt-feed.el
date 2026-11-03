@@ -662,12 +662,37 @@ INFO is from `yt-auth-run'; FULL is non-nil for a full refresh."
                                  0))
                   (and stop-after (>= streak stop-after) 'stop)))
      :on-success (lambda (_value info)
-                   (yt-feed--fetched buffer run (nreverse videos) info full))
+                   (yt-feed--finish buffer run
+                                    (lambda ()
+                                      (yt-feed--fetched buffer run (nreverse videos)
+                                                        info full))))
      :on-error (lambda (err)
                  (when (and (yt-feed--current-p buffer run)
                             (not (eq (plist-get err :type) 'cancelled)))
-                   (with-current-buffer buffer
-                     (yt-feed--fail (yt-feed--failure-message err))))))))
+                   (yt-feed--finish
+                    buffer run
+                    (lambda ()
+                      ;; Keep what arrived before a timeout or a network
+                      ;; error; a playlist is only replaced when whole.
+                      (when (and videos (memq (plist-get err :type) '(timeout exit))
+                                 (not (plist-get spec :replace)))
+                        (yt-feed--fetched buffer run (nreverse videos) nil nil))
+                      (with-current-buffer buffer
+                        (yt-feed--fail (yt-feed--failure-message err))))))))))
+
+(defun yt-feed--finish (buffer run fn)
+  "Call FN to end the refresh RUN of BUFFER.
+If FN signals, the refresh still ends, with the error as its message,
+so that it is not left running for ever."
+  (condition-case err
+      (funcall fn)
+    (error
+     (when (buffer-live-p buffer)
+       (with-current-buffer buffer
+         ;; Unless a newer refresh has started meanwhile.
+         (when (memql yt-feed--refreshing (list nil run))
+           (yt-feed--fail (format "Refreshing failed: %s"
+                                  (error-message-string err)))))))))
 
 (defun yt-feed--sign-in ()
   "Export the cookies of the Chromium profile, then refresh the feed."

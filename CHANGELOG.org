@@ -2,6 +2,13 @@
 
 * Unreleased
 ** After M7
+- Refreshes and downloads always finish: an error while showing a refresh
+  (such as a locked database) ends it with a message instead of leaving
+  it "already refreshing"; a failed save of rotated cookies no longer
+  loses the run's result; an error after a thumbnail arrives no longer
+  uses up one of the four download slots; an export that fails to start
+  no longer blocks every later one.  Videos received before a refresh
+  timed out or lost the network are kept.
 - A feed or channel list that is still empty after the cookies were
   exported again is reported as "YouTube returned no videos", with the
   hint to update yt-dlp, instead of "session expired".
