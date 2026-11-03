@@ -134,5 +134,33 @@
                     (should (stringp (car-safe binding)))))
                 map)))
 
+(ert-deftest yt-test-autoloads ()
+  "The generated autoloads define the commands people run with M-x.
+Every autoload cookie must precede a definition: one before a
+comment autoloads whatever comes next instead."
+  (let* ((dir (file-name-directory (directory-file-name yt-test-dir)))
+         (out (expand-file-name "yt-autoloads-test.el" yt-test-root))
+         (sources (seq-remove (lambda (f) (string-suffix-p "-autoloads.el" f))
+                              (directory-files dir t "\\`yt.*\\.el\\'"))))
+    (dolist (file sources)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (goto-char (point-min))
+        (while (re-search-forward "^;;;###autoload\n" nil t)
+          (should (equal (list (file-name-nondirectory file) "(")
+                         (list (file-name-nondirectory file)
+                               (buffer-substring (point) (min (point-max) (1+ (point))))))))))
+    (unwind-protect
+        (progn
+          (let ((inhibit-message t))
+            (loaddefs-generate dir out (list "yt-autoloads.el")))
+          (let ((text (yt-test-file-string out)))
+            (dolist (command '(yt yt-subscriptions yt-login yt-logout yt-forget-history
+                                  yt-history yt-channels yt-search yt-play-url yt-doctor
+                                  yt-subscribe yt-unsubscribe yt-saved-playlists))
+              (should (string-match-p (format "(\\(?:autoload\\|defalias\\) '%s " command) text)))))
+      (when (file-exists-p out)
+        (delete-file out)))))
+
 (provide 'yt-tests)
 ;;; yt-tests.el ends here
